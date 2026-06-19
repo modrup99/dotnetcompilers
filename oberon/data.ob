@@ -1,0 +1,17 @@
+MODULE Data;
+IMPORT Out;
+TYPE
+  Point = RECORD x, y: INTEGER END;
+VAR
+  p: Point;
+  a: ARRAY 5 OF INTEGER;
+  i, s: INTEGER;
+BEGIN
+  p.x := 3; p.y := 4;
+  Out.String("point ("); Out.Int(p.x, 0); Out.String(","); Out.Int(p.y, 0); Out.String(")"); Out.Ln;
+  s := 0;
+  FOR i := 0 TO 4 DO a[i] := i * i; s := s + a[i] END;
+  Out.String("squares: ");
+  FOR i := 0 TO 4 DO Out.Int(a[i], 3) END;
+  Out.String("  sum="); Out.Int(s, 0); Out.Ln
+END Data.

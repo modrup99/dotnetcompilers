@@ -1,0 +1,7 @@
+func main() -> void {
+    int n = 1;
+    while (n <= 5) {
+        if (n % 2 == 0) { println(n); } else { println(0 - n); }
+        n = n + 1;
+    }
+}

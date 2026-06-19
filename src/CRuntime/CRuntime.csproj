@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>CRuntime</AssemblyName>
+    <RootNamespace>CRuntimeLib</RootNamespace>
+    <!-- Methods here are bound by name from emitted C; keep names exactly. -->
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>

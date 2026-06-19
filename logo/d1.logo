@@ -1,0 +1,3 @@
+PRINT [Hello from Logo]
+MAKE "n 6
+PRINT :n * :n

@@ -1,0 +1,1 @@
+REPEAT 3 [ IFELSE :repcount < 3 [ PRINT :repcount ] [ PRINT [last] ] ]

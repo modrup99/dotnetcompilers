@@ -1,0 +1,9 @@
+MODULE Ptr;
+IMPORT Out;
+TYPE IntPtr = POINTER TO INTEGER;
+VAR p: IntPtr;
+BEGIN
+  NEW(p);
+  p^ := 42;
+  Out.String("deref = "); Out.Int(p^, 0); Out.Ln
+END Ptr.

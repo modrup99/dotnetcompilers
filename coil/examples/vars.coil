@@ -1,0 +1,12 @@
+func main() -> void {
+    int    count = 42;
+    double ratio = 3.5;
+    bool   ok    = true;
+    string name  = "Coil";
+    var    auto  = count * 2;          // type inferred: int
+    println(count);
+    println(ratio * 2.0);
+    println(ok && (count > 10));
+    println(name);
+    println(auto);
+}

@@ -1,0 +1,10 @@
+cd C:/claude/dotnetcomp
+echo [1/4] yacc: pascal.y -> parser
+yacc/yacc.exe < pascal/pascal.y > out/pas_parse.c
+echo [2/4] lex: pascal.l -> scanner
+lex/lex.exe < pascal/pascal.l > out/pas_scan.c
+echo [3/4] concatenate
+cat out/pas_parse.c out/pas_scan.c > out/pascal_src.c
+echo [4/4] cc: pascal_src.c -> pascal.exe
+src/Cc/bin/Release/net10.0/cc.exe out/pascal_src.c -o out/pascal.exe --exe
+echo build complete

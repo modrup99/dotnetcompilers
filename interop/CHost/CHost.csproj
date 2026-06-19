@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reference a library produced by our C compiler. -->
+    <Reference Include="cdemo">
+      <HintPath>..\..\out\cdemo.dll</HintPath>
+    </Reference>
+    <!-- C-compiled assemblies depend on the C runtime/libc. -->
+    <Reference Include="CRuntime">
+      <HintPath>..\..\src\Cc\bin\Release\net10.0\CRuntime.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

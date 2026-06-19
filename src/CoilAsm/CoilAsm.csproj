@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>coilasm</AssemblyName>
+    <RootNamespace>CoilAsm</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Bind against .NET *reference* assemblies so emitted Coil assemblies are
+         referenceable from C#/VB.NET (not tied to System.Private.CoreLib). -->
+    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

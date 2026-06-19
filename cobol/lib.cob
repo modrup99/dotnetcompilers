@@ -1,0 +1,7 @@
+IDENTIFICATION DIVISION.
+PROGRAM-ID. COBLIB.
+PROCEDURE DIVISION.
+SHOW-BANNER.
+    DISPLAY "=== Daily Report (compiled from COBOL) ===".
+SHOW-FOOTER.
+    DISPLAY "--- end of report ---".

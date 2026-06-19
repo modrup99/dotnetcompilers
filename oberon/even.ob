@@ -1,0 +1,14 @@
+MODULE Even;
+IMPORT Out;
+VAR i, sum: INTEGER;
+BEGIN
+  sum := 0;
+  i := 1;
+  WHILE i <= 10 DO
+    IF ~ODD(i) THEN sum := sum + i END;
+    INC(i)
+  END;
+  Out.String("sum of evens 1..10 = "); Out.Int(sum, 0); Out.Ln;
+  IF sum # 30 THEN Out.String("WRONG") ELSE Out.String("ok") END;
+  Out.Ln
+END Even.

@@ -1,0 +1,28 @@
+MODULE Shapes;
+IMPORT Out;
+TYPE
+  Figure = POINTER TO FigureDesc;
+  FigureDesc = RECORD name: INTEGER END;
+  Square = POINTER TO SquareDesc;
+  SquareDesc = RECORD (FigureDesc) side: INTEGER END;
+  Circle = POINTER TO CircleDesc;
+  CircleDesc = RECORD (FigureDesc) r: INTEGER END;
+
+PROCEDURE (f: Figure) Area(): INTEGER;
+BEGIN RETURN 0 END Area;
+
+PROCEDURE (s: Square) Area(): INTEGER;
+BEGIN RETURN s.side * s.side END Area;
+
+PROCEDURE (c: Circle) Area(): INTEGER;
+BEGIN RETURN 3 * c.r * c.r END Area;
+
+VAR sq: Square; ci: Circle; f: Figure;
+BEGIN
+  NEW(sq); sq.side := 5;
+  NEW(ci); ci.r := 10;
+  Out.String("square area = "); Out.Int(sq.Area(), 0); Out.Ln;
+  Out.String("circle area = "); Out.Int(ci.Area(), 0); Out.Ln;
+  f := sq;  Out.String("via base = "); Out.Int(f.Area(), 0); Out.Ln;
+  f := ci;  Out.String("via base = "); Out.Int(f.Area(), 0); Out.Ln
+END Shapes.

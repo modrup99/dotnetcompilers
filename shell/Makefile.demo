@@ -1,0 +1,11 @@
+# demo Makefile for ilsh's make — try:  make -f Makefile.demo
+CC = echo compiling
+all: hello.txt
+hello.txt: parts.txt
+	$(CC) $@
+	cat parts.txt > $@
+parts.txt:
+	echo part-one > $@
+	echo part-two >> $@
+clean:
+	rm hello.txt parts.txt

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reference the assembly produced by our Tiny compiler, exactly as if it
+         were any other .NET library. No source, just the emitted IL. -->
+    <Reference Include="demo">
+      <HintPath>..\..\out\demo.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

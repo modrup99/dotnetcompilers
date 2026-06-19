@@ -1,0 +1,14 @@
+; a red star plus a blue square spirograph
+TO square :size
+  REPEAT 4 [ FD :size RT 90 ]
+END
+TO star
+  REPEAT 5 [ FD 150 RT 144 ]
+END
+SETPENSIZE 2
+SETPC 4
+star
+PU HOME PD
+SETPC 1
+REPEAT 36 [ square 80 RT 10 ]
+PRINT [done]

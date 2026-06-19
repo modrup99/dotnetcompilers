@@ -1,0 +1,3 @@
+MAKE "name [Ada Lovelace]
+PRINT [Hello]
+PRINT :name

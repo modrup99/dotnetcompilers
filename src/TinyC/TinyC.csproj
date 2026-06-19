@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>tinyc</AssemblyName>
+    <RootNamespace>TinyC</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Lets the compiler bind against .NET *reference* assemblies (System.Runtime,
+         System.Console, ...) rather than the live runtime's System.Private.CoreLib,
+         so emitted assemblies are referenceable from C#/VB.NET. -->
+    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

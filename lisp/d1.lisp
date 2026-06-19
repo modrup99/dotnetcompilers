@@ -1,0 +1,6 @@
+(print "Hello, Lisp!")
+(print (+ 40 2))
+(define greeting "hi")
+(print greeting)
+(if (> 5 3) (print (quote yes)) (print (quote no)))
+(print (cond ((= 1 2) (quote a)) ((= 2 2) (quote b)) (else (quote c))))

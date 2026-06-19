@@ -1,0 +1,6 @@
+cd C:/claude/dotnetcomp
+yacc/yacc.exe < oberon/oberon.y > out/ob_parse.c
+lex/lex.exe < oberon/oberon.l > out/ob_scan.c
+cat out/ob_parse.c out/ob_scan.c > out/oberon_src.c
+src/Cc/bin/Release/net10.0/cc.exe out/oberon_src.c -o out/oberon.exe --exe
+echo build complete

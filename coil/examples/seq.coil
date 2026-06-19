@@ -1,0 +1,14 @@
+func sumSquares(int n) -> int {
+    int total = 0;
+    int i = 1;
+    while (i <= n) { total = total + i * i; i = i + 1; }
+    return total;
+}
+func gcd(int a, int b) -> int {
+    while (b != 0) { int t = b; b = a % b; a = t; }
+    return a;
+}
+func main() -> void {
+    println(sumSquares(5));
+    println(gcd(48, 36));
+}

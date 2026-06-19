@@ -1,0 +1,9 @@
+TO spiral :len :angle
+  IF :len < 3 [ STOP ]
+  FD :len
+  RT :angle
+  spiral :len - 4 :angle
+END
+SETPENSIZE 2
+SETPC 4
+spiral 120 28

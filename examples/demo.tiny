@@ -1,0 +1,27 @@
+// demo.tiny — exercises functions, recursion, loops and conditionals.
+
+func add(a, b) {
+    return a + b;
+}
+
+func fib(n) {
+    if (n < 2) { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+
+func factorial(n) {
+    let result = 1;
+    let i = 1;
+    while (i <= n) {
+        result = result * i;
+        i = i + 1;
+    }
+    return result;
+}
+
+func main() {
+    print add(3, 4);        // 7
+    print fib(10);          // 55
+    print factorial(5);     // 120
+    return 0;
+}

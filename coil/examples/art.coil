@@ -1,0 +1,10 @@
+func main() -> void {
+    int row = 1;
+    while (row <= 5) {
+        string line = "";
+        int k = 0;
+        while (k < row) { line = line + "*"; k = k + 1; }
+        println(line);
+        row = row + 1;
+    }
+}
