@@ -27,6 +27,7 @@ DOCS = [
     ("cobol/cobol.md",   "COBOL",       "COBOL"),
     ("ada/ada.md",       "Ada",         "Ada"),
     ("smalltalk/smalltalk.md", "Smalltalk", "Smalltalk"),
+    ("lua/lua.md",       "Lua",         "Lua"),
 ]
 
 CSS = """
