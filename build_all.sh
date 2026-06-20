@@ -7,6 +7,8 @@ cd "$(dirname "$0")"
 echo "[1/5] building cc + CRuntime ..."
 dotnet build src/Cc -c Release -v q
 CC="dotnet src/Cc/bin/Release/net10.0/cc.dll"
+mkdir -p out
+cp src/Cc/bin/Release/net10.0/CRuntime.dll out/CRuntime.dll   # keep the shared runtime fresh for everything in out/
 
 echo "[2/5] compiling lex and yacc (our C -> IL) ..."
 $CC lex/lex.c   -o lex/lex.dll   --exe

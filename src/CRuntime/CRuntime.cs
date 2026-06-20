@@ -533,6 +533,52 @@ public static class CRuntime
         return string.IsNullOrEmpty(v) ? 0 : Cstr(v);
     }
 
+    // --- time helpers (cc-compiled code can't reach DateTime directly) ---
+    public static long rt_epoch_ms() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    public static int rt_datefmt(int fmt)   // strftime-ish format -> string (empty fmt = default)
+    {
+        string f = fmt == 0 ? "" : ReadCStr(fmt);
+        var n = DateTime.Now;
+        if (string.IsNullOrEmpty(f)) return Cstr(n.ToString("ddd MMM dd HH:mm:ss yyyy", CultureInfo.InvariantCulture));
+        var sb = new StringBuilder();
+        for (int i = 0; i < f.Length; i++)
+        {
+            if (f[i] != '%' || i + 1 >= f.Length) { sb.Append(f[i]); continue; }
+            char c = f[++i];
+            switch (c)
+            {
+                case 'Y': sb.Append(n.Year.ToString("D4")); break;
+                case 'y': sb.Append((n.Year % 100).ToString("D2")); break;
+                case 'm': sb.Append(n.Month.ToString("D2")); break;
+                case 'd': sb.Append(n.Day.ToString("D2")); break;
+                case 'H': sb.Append(n.Hour.ToString("D2")); break;
+                case 'M': sb.Append(n.Minute.ToString("D2")); break;
+                case 'S': sb.Append(n.Second.ToString("D2")); break;
+                case 'j': sb.Append(n.DayOfYear.ToString("D3")); break;
+                case 'p': sb.Append(n.Hour < 12 ? "AM" : "PM"); break;
+                case 'A': sb.Append(n.ToString("dddd", CultureInfo.InvariantCulture)); break;
+                case 'a': sb.Append(n.ToString("ddd", CultureInfo.InvariantCulture)); break;
+                case 'B': sb.Append(n.ToString("MMMM", CultureInfo.InvariantCulture)); break;
+                case 'b': sb.Append(n.ToString("MMM", CultureInfo.InvariantCulture)); break;
+                case '%': sb.Append('%'); break;
+                default: sb.Append('%'); sb.Append(c); break;
+            }
+        }
+        return Cstr(sb.ToString());
+    }
+    public static int rt_tasklist()   // best-effort `tasklist` capture; empty string on failure
+    {
+        try
+        {
+            var p = new System.Diagnostics.Process();
+            p.StartInfo.FileName = "tasklist"; p.StartInfo.UseShellExecute = false;
+            p.StartInfo.RedirectStandardOutput = true; p.StartInfo.CreateNoWindow = true;
+            p.Start(); string o = p.StandardOutput.ReadToEnd(); p.WaitForExit();
+            return Cstr(o);
+        }
+        catch { return Cstr(""); }
+    }
+
     public static int sh_cd(int p) { try { Directory.SetCurrentDirectory(ReadCStr(p)); return 0; } catch { return 1; } }
     public static int sh_cwd(int buf) { var s = Directory.GetCurrentDirectory(); for (int i = 0; i < s.Length; i++) Mem[buf + i] = (byte)s[i]; Mem[buf + s.Length] = 0; return buf; }
     public static int sh_export(int name, int val) { _exports[ReadCStr(name)] = ReadCStr(val); return 0; }

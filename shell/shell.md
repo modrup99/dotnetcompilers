@@ -61,6 +61,20 @@ it is hidden from `ls` unless you pass `ls -al`. It is the preferred place to co
 the shell — enable the VFS, repoint mounts, define aliases. If there is no `.ilshellrc`,
 ilsh falls back to `~/.bashrc`. A template lives in `shell/dot-ilshellrc.sample`.
 
+## Built-in tools
+
+Beyond the file/text coreutils, ilsh has these built in (type `NAME -h` for usage):
+
+| Command | What it does |
+|---|---|
+| `bc [expr]` | scientific calculator (REPL with no expression) |
+| `date [+FORMAT]` | current date/time; `FORMAT` uses `%Y %m %d %H %M %S %A %B %a %b %j %p %y` |
+| `time CMD …` | run a command and report wall-clock time |
+| `sed [-n] SCRIPT [file]` | stream editor: `s/old/new/[g][p]`, `/pat/d`, `/pat/p` (literal match) |
+| `wc [file…]` | line / word / byte counts |
+| `man NAME` | page a language's reference doc (`man pascal`, `man lua`, `man shell`) through `more` |
+| `ps [-e]` | list shell-started background jobs; `-e` also dumps the OS `tasklist` |
+
 ## Backward compatibility
 
 With the VFS off (the default), `vmap()` is the identity function: every path passes

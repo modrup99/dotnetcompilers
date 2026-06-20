@@ -566,6 +566,12 @@ int print_usage(char *c)
     else if (streq(c, "paste")) sh_write((int)"usage: paste file...\n");
     else if (streq(c, "find")) sh_write((int)"usage: find [path] [-name glob]\n");
     else if (streq(c, "more")) sh_write((int)"usage: more [file]\n");
+    else if (streq(c, "sed")) sh_write((int)"usage: sed [-n] 's/old/new/[g][p]' | '/pat/d' | '/pat/p'  [file]\n");
+    else if (streq(c, "date")) sh_write((int)"usage: date [+FORMAT]   (%Y %m %d %H %M %S %A %B %a %b %j %p %y)\n");
+    else if (streq(c, "time")) sh_write((int)"usage: time <command> [args...]   (report wall-clock time)\n");
+    else if (streq(c, "bc")) sh_write((int)"usage: bc [expr]   (scientific calculator; REPL if no expression)\n");
+    else if (streq(c, "man")) sh_write((int)"usage: man <name>   (page a language's reference doc, e.g. man pascal)\n");
+    else if (streq(c, "ps")) sh_write((int)"usage: ps [-e]   (list shell jobs; -e also dumps the OS tasklist)\n");
     else if (streq(c, "cp")) sh_write((int)"usage: cp src dst\n");
     else if (streq(c, "mv")) sh_write((int)"usage: mv src dst\n");
     else if (streq(c, "rm")) sh_write((int)"usage: rm file...\n");
@@ -594,7 +600,8 @@ int bi_help(int n, int *argv, int start)
     sh_write((int)"  vfs:     vfs on [DIR]/off/status  (virtual / + /home + /bin + /etc + /include + /lib + /tmp)\n");
     sh_write((int)"           lcd lpwd lls  reach the REAL Windows filesystem; --home DIR enables it at startup\n");
     sh_write((int)"  build:   make [-f file] [VAR=val] [target]\n");
-    sh_write((int)"  text:    grep sort wc head tail cut paste more\n");
+    sh_write((int)"  text:    grep sort wc head tail cut paste more sed\n");
+    sh_write((int)"  tools:   bc date time man ps\n");
     sh_write((int)"  syntax:  if/then/elif/else/fi  while/do/done  for X in .. do .. done\n");
     sh_write((int)"           pipes |   redirect > >> <   sequence ;   && ||   background &\n");
     sh_write((int)"  history: up/down arrows, !!  !n  !prefix\n");
@@ -647,6 +654,53 @@ int bi_gfx(int n, int *argv, int start)
     return spawn_gfx(dll);
 }
 
+int u_more(int n, int *argv, int start);   /* defined in coreutils.c (later in the build) */
+
+/* date [+FORMAT] — current date/time; FORMAT uses strftime-style %Y %m %d %H %M %S ... */
+int bi_date(int n, int *argv, int start)
+{
+    char *fmt = 0;
+    if (n > 1) { char *a = (char *)argv[start + 1]; if (a[0] == '+') fmt = a + 1; }
+    sh_write((int)rt_datefmt(fmt ? (int)fmt : 0)); sh_write((int)"\n");
+    return 0;
+}
+/* bc [expr] — run the bc calculator tool (REPL when given no expression) */
+int bi_bc(int n, int *argv, int start)
+{
+    char *repo = (char *)rt_repo(); char exe[1100];
+    sprintf((int)exe, (int)"%s\\out\\bc.exe", (int)repo);
+    if (!rt_exists((int)exe)) { sh_write((int)"bc: out\\bc.exe not built (run build_all)\n"); return 1; }
+    int *arr = (int *)malloc((n + 1) * 4); int j; arr[0] = (int)exe;
+    for (j = 1; j < n; j++) arr[j] = argv[start + j];
+    return sh_run((int)arr, n);
+}
+/* man NAME — page a language's reference doc (<repo>\NAME\NAME.md) through more */
+int bi_man(int n, int *argv, int start)
+{
+    if (n < 2) { sh_write((int)"usage: man <name>   (e.g. man pascal, man lua, man shell)\n"); return 1; }
+    char *nm = (char *)argv[start + 1]; char *repo = (char *)rt_repo(); char path[1100];
+    sprintf((int)path, (int)"%s\\%s\\%s.md", (int)repo, nm, nm);
+    if (!rt_exists((int)path))
+    {
+        if (streq(nm, "cpp") || streq(nm, "c++") || streq(nm, "tcpp")) sprintf((int)path, (int)"%s\\cpp\\tcpp.md", (int)repo);
+        else if (streq(nm, "shell") || streq(nm, "ilsh")) sprintf((int)path, (int)"%s\\shell\\shell.md", (int)repo);
+        else if (streq(nm, "fortran") || streq(nm, "f90")) sprintf((int)path, (int)"%s\\fortran\\fortran.md", (int)repo);
+    }
+    if (!rt_exists((int)path)) { sh_write((int)"man: no manual entry for "); sh_write((int)nm); sh_write((int)"\n"); return 1; }
+    int marg[2]; marg[0] = (int)"more"; marg[1] = (int)path;
+    return u_more(2, marg, 0);
+}
+/* ps [-e] — list shell-started background jobs; -e also dumps the OS tasklist */
+int bi_ps(int n, int *argv, int start)
+{
+    int all = 0; int i;
+    for (i = start + 1; i < start + n; i++) { char *a = (char *)argv[i]; if (streq(a, "-e") || streq(a, "-a") || streq(a, "all")) all = 1; }
+    sh_write((int)"-- shell jobs --\n");
+    sh_jobs();
+    if (all) { sh_write((int)"-- tasklist --\n"); sh_write((int)rt_tasklist()); }
+    return 0;
+}
+
 int source_file(char *path)
 {
     char *d = (char *)rt_slurp((int)vmap(path));
@@ -683,6 +737,20 @@ int run_command(int n, int *argv, int start)
     if (strcmp(cmd, "push") == 0) return bi_push(n, argv, start);
     if (strcmp(cmd, "pop") == 0) return bi_pop(n, argv, start);
     if (strcmp(cmd, "make") == 0) return mk_main(n, argv, start);
+    if (strcmp(cmd, "date") == 0) return bi_date(n, argv, start);
+    if (strcmp(cmd, "bc") == 0) return bi_bc(n, argv, start);
+    if (strcmp(cmd, "man") == 0) return bi_man(n, argv, start);
+    if (strcmp(cmd, "ps") == 0) return bi_ps(n, argv, start);
+    if (strcmp(cmd, "time") == 0)
+    {
+        if (n < 2) { sh_write((int)"usage: time <command> [args...]\n"); return 1; }
+        long t0 = rt_epoch_ms();
+        int st = run_command(n - 1, argv, start + 1);
+        long ms = rt_epoch_ms() - t0; char b[64];
+        sprintf((int)b, (int)"real\t%ld.%03lds\n", ms / 1000, ms % 1000);
+        sh_write((int)b);
+        return st;
+    }
     if (strcmp(cmd, "vi") == 0) return vi_main(n, argv, start);
     if (strcmp(cmd, "xeyes") == 0) return bi_xeyes();
     if (strcmp(cmd, "gfx") == 0) return bi_gfx(n, argv, start);

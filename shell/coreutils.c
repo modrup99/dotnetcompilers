@@ -259,6 +259,64 @@ int u_more(int n, int *argv, int start)
     return 0;
 }
 
+/* ---- sed [-n] 's/old/new/[g][p]' | '/pat/d' | '/pat/p' [file] ----
+ * A pragmatic subset: literal (non-regex) substitution and literal line addressing. */
+void sed_subst(char *ln, char *A, char *B, int g, char *out)
+{
+    int la = strlen(A); int o = 0, i = 0, done = 0;
+    if (la == 0) { strcpy(out, ln); return; }
+    while (ln[i])
+    {
+        if ((!done || g) && strncmp(ln + i, A, la) == 0) { int k = 0; while (B[k]) out[o++] = B[k++]; i += la; done = 1; }
+        else out[o++] = ln[i++];
+    }
+    out[o] = 0;
+}
+int u_sed(int n, int *argv, int start)
+{
+    int nflag = 0; char *script = 0; char *file = 0; int i;
+    for (i = start + 1; i < start + n; i++)
+    {
+        char *a = (char *)argv[i];
+        if (streq(a, "-n")) nflag = 1;
+        else if (script == 0) script = a;
+        else file = a;
+    }
+    if (script == 0) { o("usage: sed [-n] 's/old/new/[g][p]' | '/pat/d' | '/pat/p'  [file]\n"); return 2; }
+    int mode = -1, g = 0, p = 0;            /* mode: 0 subst, 1 delete, 2 print */
+    char A[1024], B[1024], pat[1024];
+    if (script[0] == 's')
+    {
+        char delim = script[1]; int q = 2, ai = 0, bi = 0;
+        while (script[q] && script[q] != delim) A[ai++] = script[q++]; A[ai] = 0; if (script[q] == delim) q++;
+        while (script[q] && script[q] != delim) B[bi++] = script[q++]; B[bi] = 0; if (script[q] == delim) q++;
+        while (script[q]) { if (script[q] == 'g') g = 1; if (script[q] == 'p') p = 1; q++; }
+        mode = 0;
+    }
+    else if (script[0] == '/')
+    {
+        int q = 1, pi = 0;
+        while (script[q] && script[q] != '/') pat[pi++] = script[q++]; pat[pi] = 0; if (script[q] == '/') q++;
+        if (script[q] == 'd') mode = 1; else if (script[q] == 'p') mode = 2; else { o("sed: expected d or p after /pat/\n"); return 2; }
+    }
+    else { o("sed: unsupported script (use s/// or /pat/d or /pat/p)\n"); return 2; }
+
+    char *d = file ? (char *)rt_slurp((int)vmap(file)) : get_input();
+    if (d == 0) return 1;
+    int lines[20000]; int nl = splitlines(d, lines, 20000);
+    char buf[8192];
+    for (i = 0; i < nl; i++)
+    {
+        char *ln = (char *)lines[i];
+        if (mode == 1) { if (!contains_ci(ln, pat, 0)) { o(ln); onl(); } continue; }   /* delete matching */
+        if (mode == 2) { if (contains_ci(ln, pat, 0)) { o(ln); onl(); } if (!nflag) { o(ln); onl(); } continue; }
+        sed_subst(ln, A, B, g, buf);                                                   /* substitute */
+        if (p && contains_ci(ln, A, 0)) { o(buf); onl(); }                             /* s///p */
+        if (!nflag) { o(buf); onl(); }
+    }
+    return 0;
+}
+
 /* dispatch: returns -12345 if cmd is not a coreutil */
 int util_dispatch(int n, int *argv, int start)
 {
@@ -280,5 +338,6 @@ int util_dispatch(int n, int *argv, int start)
     if (streq(c, "touch")) return u_touch(n, argv, start);
     if (streq(c, "ln")) return u_ln(n, argv, start);
     if (streq(c, "more")) return u_more(n, argv, start);
+    if (streq(c, "sed")) return u_sed(n, argv, start);
     return -12345;
 }
