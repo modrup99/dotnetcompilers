@@ -306,8 +306,23 @@ int it_dot(int it) { return (it / 256) % 25; }
 int it_la(int it) { return it % 256; }
 
 int W[120000]; int wn;     /* working item list */
-void addW(int it) { int i; for (i = 0; i < wn; i++) if (W[i] == it) return; if (wn >= 120000) die("item-set overflow (W)", wn); W[wn++] = it; }
+/* O(1) membership for the current item set via generation stamps: an item is in W iff
+ * seenv[it] == seeng. resetW() bumps the generation, clearing the set in O(1). This
+ * replaces the old O(n^2) linear-scan dedup that dominated build time on big closures. */
+int seenv[4000000]; int seeng;
+void resetW(void) { wn = 0; seeng++; }
+void addW(int it) { if (seenv[it] == seeng) return; if (wn >= 120000) die("item-set overflow (W)", wn); seenv[it] = seeng; W[wn++] = it; }
 
+/* productions indexed by LHS symbol, so closure() needn't scan all productions per item */
+int pblHead[512]; int pblNext[600];
+void build_prodbylhs(void)
+{
+    int A, q;
+    for (A = 0; A < nsym; A++) pblHead[A] = -1;
+    for (q = nprod - 1; q >= 0; q--) { pblNext[q] = pblHead[plhs[q]]; pblHead[plhs[q]] = q; }
+}
+
+int csb[512];   /* scratch: set-bit list of a FIRST set */
 void closure(void)
 {
     int i = 0;
@@ -320,16 +335,46 @@ void closure(void)
         if (symterm[B]) continue;
         int fb[16]; int z; for (z = 0; z < 16; z++) fb[z] = 0;
         first_of_tail(prod, dot + 1, la, fb);
+        /* extract the set lookahead bits once, then reuse across every production of B
+         * (was: rescan all nsym bits for each production -> O(nsym * prods) per item) */
+        int ns = 0, b;
+        for (b = 0; b < nsym; b++) if (getb(fb, b)) csb[ns++] = b;
         int q;
-        for (q = 0; q < nprod; q++) if (plhs[q] == B)
+        for (q = pblHead[B]; q >= 0; q = pblNext[q])
         {
-            int b;
-            for (b = 0; b < nsym; b++) if (getb(fb, b)) addW(mkitem(q, 0, b));
+            int t; int q0 = q * 25 * 256;   /* mkitem(q,0,b) == q*25*256 + b */
+            for (t = 0; t < ns; t++) addW(q0 + csb[t]);
         }
     }
 }
 
-void sortints(int *a, int n) { int i, j; for (i = 1; i < n; i++) { int v = a[i]; j = i - 1; while (j >= 0 && a[j] > v) { a[j + 1] = a[j]; j--; } a[j + 1] = v; } }
+/* heapsort: O(n log n), no recursion (closures can hold tens of thousands of items, so
+ * the old insertion sort was an O(n^2) bottleneck on ambiguous grammars). */
+void sortints(int *a, int n)
+{
+    int i, root, child, t;
+    for (i = n / 2 - 1; i >= 0; i--)
+    {
+        root = i;
+        while ((child = 2 * root + 1) < n)
+        {
+            if (child + 1 < n && a[child] < a[child + 1]) child++;
+            if (a[root] < a[child]) { t = a[root]; a[root] = a[child]; a[child] = t; root = child; }
+            else break;
+        }
+    }
+    for (i = n - 1; i > 0; i--)
+    {
+        t = a[0]; a[0] = a[i]; a[i] = t;
+        root = 0;
+        while ((child = 2 * root + 1) < i)
+        {
+            if (child + 1 < i && a[child] < a[child + 1]) child++;
+            if (a[root] < a[child]) { t = a[root]; a[root] = a[child]; a[child] = t; root = child; }
+            else break;
+        }
+    }
+}
 
 /* LALR(1) by construction: states are identified by their LR(0) core (the set of
  * prod*25+dot, ignoring lookahead). When a goto reaches a state whose core already
@@ -405,27 +450,40 @@ int find_or_merge(void)
     return s;
 }
 
+int g_reproc, g_gotos, g_scanned;   /* diagnostics */
+int kgx[STRIDE], kgi[STRIDE], sgx[STRIDE], sgi[STRIDE], ccnt[512], cpos[512];   /* goto bucketing */
 void build_lalr(void)
 {
     int i; for (i = 0; i < 8192; i++) hh[i] = -1;
     nstate = 0; qh = 0; qt = 0; for (i = 0; i < MAXST; i++) inq[i] = 0;
-    wn = 0; addW(mkitem(0, 0, 0)); closure(); find_or_merge();
+    seeng = 0; g_reproc = 0; g_gotos = 0; g_scanned = 0; build_prodbylhs();
+    resetW(); addW(mkitem(0, 0, 0)); closure(); find_or_merge();
     while (qh != qt)
     {
         int s = wq[qh++]; if (qh >= 24000) qh = 0; inq[s] = 0;
-        int X;
-        for (X = 0; X < nsym; X++)
+        g_reproc++; g_scanned += slen[s];
+        int base = s * STRIDE; int sl = slen[s];
+        /* one pass: collect advanced kernels (the symbol after each dot), then group them
+         * by that symbol with a counting sort -- avoids the old O(nsym * slen) rescan. */
+        int nk = 0;
+        for (i = 0; i < sl; i++)
         {
-            wn = 0;
-            int base = s * STRIDE;
-            for (i = 0; i < slen[s]; i++)
-            {
-                int it = pool[base + i]; int prod = it_prod(it), dot = it_dot(it), la = it_la(it);
-                if (dot < plen[prod] && prhs[prod][dot] == X) addW(mkitem(prod, dot + 1, la));
-            }
-            if (wn == 0) { trans[s][X] = -1; continue; }
+            int it = pool[base + i]; int prod = it_prod(it), dot = it_dot(it);
+            if (dot < plen[prod]) { kgx[nk] = prhs[prod][dot]; kgi[nk] = it + 256; nk++; }   /* it+256 == advance dot by one */
+        }
+        if (nk == 0) continue;
+        int x; for (x = 0; x < nsym; x++) ccnt[x] = 0;
+        int j; for (j = 0; j < nk; j++) ccnt[kgx[j]]++;
+        int acc = 0; for (x = 0; x < nsym; x++) { cpos[x] = acc; acc += ccnt[x]; }
+        for (j = 0; j < nk; j++) { int p2 = cpos[kgx[j]]++; sgx[p2] = kgx[j]; sgi[p2] = kgi[j]; }
+        j = 0;
+        while (j < nk)
+        {
+            x = sgx[j]; resetW();
+            while (j < nk && sgx[j] == x) { addW(sgi[j]); j++; }
+            g_gotos++;
             closure();
-            trans[s][X] = find_or_merge();
+            trans[s][x] = find_or_merge();
         }
     }
     nmerged = nstate;
@@ -616,7 +674,7 @@ int main(int argc, char **argv)
     if (nprod >= 600) die("too many productions", nprod);
     compute_first();
     build_lalr();
-    if (verbose) { eputs("yacc: LALR states="); eputn(nstate); eputs("\n"); }
+    if (verbose) { eputs("yacc: LALR states="); eputn(nstate); eputs(" reproc="); eputn(g_reproc); eputs(" gotos="); eputn(g_gotos); eputs(" itemscanned="); eputn(g_scanned); eputs("\n"); }
     build_tables();
     if (verbose) { eputs("yacc: conflicts="); eputn(nconflict); eputs("\n"); }
     emit_parser();
