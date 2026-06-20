@@ -21,6 +21,3 @@ Thumbs.db
 
 # COBOL file-I/O test data
 *.dat
-
-# AWK is work-in-progress (yacc table blowup on its grammar); not yet building
-awk/

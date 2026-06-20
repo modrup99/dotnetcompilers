@@ -103,13 +103,19 @@ dotnet lex/lex.dll   < smalltalk/smalltalk.l > out/st_scan.c
 cat out/st_parse.c out/st_scan.c > out/st_src.c
 $CC out/st_src.c -o out/smalltalk.exe --exe
 
-echo "[20/21] building the Lua compiler (lua.l + lua.y -> our C -> IL; C#/VB interop) ..."
+echo "[20/22] building the Lua compiler (lua.l + lua.y -> our C -> IL; C#/VB interop) ..."
 dotnet yacc/yacc.dll < lua/lua.y > out/lua_parse.c
 dotnet lex/lex.dll   < lua/lua.l > out/lua_scan.c
 cat out/lua_parse.c out/lua_scan.c > out/lua_src.c
 $CC out/lua_src.c -o out/lua.exe --exe
 
-echo "[21/21] done. Tools & launchers:"
+echo "[21/22] building the AWK compiler (awk.l + awk.y -> our C -> IL; C#/VB interop) ..."
+dotnet yacc/yacc.dll < awk/awk.y > out/awk_parse.c
+dotnet lex/lex.dll   < awk/awk.l > out/awk_scan.c
+cat out/awk_parse.c out/awk_scan.c > out/awk_src.c
+$CC out/awk_src.c -o out/awk.exe --exe
+
+echo "[22/22] done. Tools & launchers:"
 echo "   ilsh.bat    - interactive shell in a console"
 echo "   ilterm.bat  - windowed VT terminal (GUI)"
 echo "   xeyes.bat   - the eyes-follow-the-mouse demo (GUI)"
@@ -128,3 +134,4 @@ echo "   out/cobol.exe <f.cob> [-o out] [--dll]    - the COBOL compiler (free-fo
 echo "   out/ada.exe <f.adb> [-o out] [--dll]      - the Ada subset compiler (types/enums/arrays; in/out; C#/VB interop)"
 echo "   out/smalltalk.exe <f.st> [-o out] [--dll] - the Smalltalk compiler (objects/messages/classes; C#/VB interop)"
 echo "   out/lua.exe <f.lua> [-o out] [--dll]      - the Lua compiler (dynamic types, tables, first-class functions; C#/VB interop)"
+echo "   out/awk.exe <f.awk> [-o out] [--dll]      - the AWK compiler (patterns/fields/regex/assoc arrays; reads stdin; C#/VB interop)"

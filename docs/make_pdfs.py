@@ -28,6 +28,7 @@ DOCS = [
     ("ada/ada.md",       "Ada",         "Ada"),
     ("smalltalk/smalltalk.md", "Smalltalk", "Smalltalk"),
     ("lua/lua.md",       "Lua",         "Lua"),
+    ("awk/awk.md",       "AWK",         "AWK"),
 ]
 
 CSS = """
