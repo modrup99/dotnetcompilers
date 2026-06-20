@@ -1374,14 +1374,19 @@ public sealed class TermGrid
         _state = 0;
     }
 
+    private bool _bold;
     private void Sgr()
     {
-        if (_ps.Count == 0) { _fg = 7; _bg = 0; return; }
+        if (_ps.Count == 0) { _fg = 7; _bg = 0; _bold = false; return; }
         foreach (int p in _ps)
         {
-            if (p == 0) { _fg = 7; _bg = 0; }
-            else if (p >= 30 && p <= 37) _fg = p - 30;
+            if (p == 0) { _fg = 7; _bg = 0; _bold = false; }
+            else if (p == 1) { _bold = true; if (_fg < 8) _fg += 8; }
+            else if (p == 22) { _bold = false; if (_fg >= 8) _fg -= 8; }
+            else if (p >= 30 && p <= 37) _fg = (p - 30) + (_bold ? 8 : 0);
+            else if (p >= 90 && p <= 97) _fg = (p - 90) + 8;       // bright foreground
             else if (p >= 40 && p <= 47) _bg = p - 40;
+            else if (p >= 100 && p <= 107) _bg = (p - 100) + 8;    // bright background
             else if (p == 39) _fg = 7; else if (p == 49) _bg = 0;
         }
     }

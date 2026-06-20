@@ -953,7 +953,7 @@ void repl(void)
     acc[0] = 0;
     while (1)
     {
-        if (acc[0] == 0) { if (g_vfs) strcpy(cwd, g_vcwd); else sh_cwd((int)cwd); sprintf((int)prompt, (int)"%s $ ", (int)cwd); }
+        if (acc[0] == 0) { if (g_vfs) strcpy(cwd, g_vcwd); else sh_cwd((int)cwd); sprintf((int)prompt, (int)"\x1b[36m%s\x1b[0m $ ", (int)cwd); }
         else strcpy(prompt, "> ");
         int r = read_line(prompt, line, 4096);
         if (r < 0) { putchar('\n'); break; }

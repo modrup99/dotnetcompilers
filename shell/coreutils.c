@@ -73,7 +73,7 @@ int u_ls(int n, int *argv, int start)
             sprintf((int)buf, (int)"%8ld", rt_lssize(i)); o(buf);
             o(" "); o((char *)rt_lsdate(i)); o(" "); o(nm); onl();
         }
-        else { o(nm); o("  "); }
+        else { if (rt_isatty() && rt_lsisdir(i)) { o("\x1b[1;34m"); o(nm); o("\x1b[0m"); } else o(nm); o("  "); }
     }
     if (!lflag && cnt > 0) onl();
     return 0;

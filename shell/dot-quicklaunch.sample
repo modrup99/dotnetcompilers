@@ -1,0 +1,13 @@
+# ~/.quicklaunch — entries added to ilterm's right-click menu.
+#
+# Copy this to your home directory as ".quicklaunch". Each line is
+#     Label = command
+# and clicking the menu item types <command> into the shell and presses Enter.
+# Lines beginning with # are comments; a line with no '=' uses itself as both
+# label and command.
+
+Build everything = bash build_all.sh
+List /bin        = ls /bin
+Edit startup     = vi /home/.ilshellrc
+Show vfs layout  = vfs status
+Calculator       = bc

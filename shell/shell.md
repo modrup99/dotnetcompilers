@@ -75,6 +75,21 @@ Beyond the file/text coreutils, ilsh has these built in (type `NAME -h` for usag
 | `man NAME` | page a language's reference doc (`man pascal`, `man lua`, `man shell`) through `more` |
 | `ps [-e]` | list shell-started background jobs; `-e` also dumps the OS `tasklist` |
 
+## The windowed terminal (ilterm)
+
+`ilterm` is an Avalonia window that hosts the shell with:
+
+- **16-color output** — the shell colors its prompt (cyan) and directory names in `ls`
+  (bright blue); any program can emit standard ANSI SGR colors (`\x1b[31m` …).
+- **Right-click menu** — Copy, Paste, Cut, **New shell window** (launches a duplicate,
+  forwarding the same `--home`), and a **Font** submenu (larger/smaller, and a choice of
+  monospace families).
+- **Selection** — drag with the mouse to select; Copy (or Ctrl+C) puts it on the
+  clipboard; Paste (or Ctrl+V) types the clipboard into the shell.
+- **`.quicklaunch`** — a file in your home directory whose `Label = command` lines become
+  extra menu entries that type the command and run it. Template in
+  `shell/dot-quicklaunch.sample`.
+
 ## Backward compatibility
 
 With the VFS off (the default), `vmap()` is the identity function: every path passes
