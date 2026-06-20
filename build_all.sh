@@ -91,7 +91,13 @@ dotnet lex/lex.dll   < cobol/cobol.l > out/cob_scan.c
 cat out/cob_parse.c out/cob_scan.c > out/cobol_src.c
 $CC out/cobol_src.c -o out/cobol.exe --exe
 
-echo "[18/18] done. Tools & launchers:"
+echo "[18/19] building the Ada compiler (ada.l + ada.y -> our C -> IL; C#/VB interop) ..."
+dotnet yacc/yacc.dll < ada/ada.y > out/ada_parse.c
+dotnet lex/lex.dll   < ada/ada.l > out/ada_scan.c
+cat out/ada_parse.c out/ada_scan.c > out/ada_src.c
+$CC out/ada_src.c -o out/ada.exe --exe
+
+echo "[19/19] done. Tools & launchers:"
 echo "   ilsh.bat    - interactive shell in a console"
 echo "   ilterm.bat  - windowed VT terminal (GUI)"
 echo "   xeyes.bat   - the eyes-follow-the-mouse demo (GUI)"
@@ -107,3 +113,4 @@ echo "   out/bc.exe [\"EXPR\"]        - the scientific calculator (REPL if no ar
 echo "   out/coilfe.exe <f.coil> [-o out] [--dll]  - the Coil compiler (curly-brace, ~1-to-1 with .NET IL; C#/VB interop)"
 echo "   out/fortran.exe <f.f90> [-o out] [--dll]  - the Fortran 90 compiler (free-form; C#/VB interop)"
 echo "   out/cobol.exe <f.cob> [-o out] [--dll]    - the COBOL compiler (free-format; PIC/PERFORM/EVALUATE; C#/VB interop)"
+echo "   out/ada.exe <f.adb> [-o out] [--dll]      - the Ada subset compiler (types/enums/arrays; in/out; C#/VB interop)"
