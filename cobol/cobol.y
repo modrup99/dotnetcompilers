@@ -14,6 +14,7 @@
 #define C_ALNUM 3
 #define C_EDIT 4
 #define C_88 5
+#define C_REFMOD 6
 #define T_INT 1
 #define T_REAL 2
 #define T_STR 3
@@ -28,6 +29,13 @@ char *g_unsrc, *g_undelim, *g_setname;
 char *g_progid; int g_inlinkage; char *g_using[64]; int g_nusing;
 int g_progidx; int g_call[64]; int g_ncall; int g_ctmp;
 int prog_parstart[256]; int prog_parcount[256];
+char *fl_log[64]; char *fl_phys[64]; char *fl_status[64]; int nfl;
+char *g_curfd; char *g_selname; int g_openmode; int g_writefrom; char *g_selstatus;
+char *g_readfile; int g_readrec;
+int sy_level[4000]; int sy_parent[4000]; char *sy_file[4000]; char *sy_idx[4000];
+int g_lvlstk[64]; int g_lvlsp;
+char *g_dc_idx; char *g_save; char *g_atendbuf; char *g_searchidx; int g_searchtab;
+char *g_atbuf; char *g_notbuf; int g_readinto;
 char *g_dc_pic; int g_dc_hasval; int g_dc_val; int g_dc_occ; int g_dc_thru; int g_dc_hasthru;
 int g_pcls, g_pdig, g_pdec, g_plen; char *g_pedit;
 char *g_lastvar; int g_lastcls;
@@ -42,9 +50,10 @@ char *istr(int n) { char b[32]; sprintf((int)b, (int)"%d", n); return (char *)st
 void ap(char *s) { if (g_pass == 2) g_out = j2(g_out, s); }
 void apd(char *s) { if (g_pass == 2) g_data = j2(g_data, s); }
 
-struct E { char *code; int ty; int lval; int cls; int dig; int dec; char *edit; int fig; };
-int mkE(char *c, int t) { struct E *e = (struct E *)malloc(36); e->code = c; e->ty = t; e->lval = 0; e->cls = -1; e->dig = 0; e->dec = 0; e->edit = ""; e->fig = 0; return (int)e; }
+struct E { char *code; int ty; int lval; int cls; int dig; int dec; char *edit; int fig; int idx; char *rms; char *rml; };
+int mkE(char *c, int t) { struct E *e = (struct E *)malloc(48); e->code = c; e->ty = t; e->lval = 0; e->cls = -1; e->dig = 0; e->dec = 0; e->edit = ""; e->fig = 0; e->idx = -1; e->rms = ""; e->rml = ""; return (int)e; }
 int mkfig(char *c, int t, int fig) { int h = mkE(c, t); ((struct E *)h)->fig = fig; return h; }
+int eidx(int h) { return ((struct E *)h)->idx; }
 char *ecode(int h) { return ((struct E *)h)->code; }
 int etype(int h) { return ((struct E *)h)->ty; }
 int ecls(int h) { return ((struct E *)h)->cls; }
@@ -60,7 +69,7 @@ char *cvar(char *nm) { return g_singleprog ? j2("v_", san(nm)) : j4("v", istr(g_
 char *pgname(char *nm) { return g_singleprog ? j2("pg_", san(nm)) : j4("pg", istr(g_progidx), "_", san(nm)); }
 char *mainpar() { return pgname("__main0"); }
 
-char *sy_name[4000]; int sy_cls[4000]; int sy_dig[4000]; int sy_dec[4000]; int sy_len[4000]; int sy_occ[4000]; char *sy_edit[4000]; char *sy_cond[4000]; int sy_ref[4000]; int nsy;
+char *sy_name[4000]; int sy_cls[4000]; int sy_dig[4000]; int sy_dec[4000]; int sy_len[4000]; int sy_occ[4000]; char *sy_edit[4000]; char *sy_cond[4000]; int sy_ref[4000]; char *sy_cname[4000]; int nsy;
 char *san(char *nm) { char *r = (char *)strdup((int)nm); int i = 0; while (r[i]) { if (r[i] == '-') r[i] = '_'; i++; } return r; }
 int sy_find(char *n) { int i; for (i = nsy - 1; i >= 0; i--) if (strcmp(sy_name[i], n) == 0) return i; return -1; }
 char *par_cn[2000]; int npar;
@@ -109,6 +118,13 @@ void do_init(int e); void do_string(int dest); void do_inspect_tally(int id, int
 void do_inspect_repl(int id, int from, int to); void do_set_true(char *nm); void do_set_var(char *nm, int e);
 void do_set_by(char *nm, int e, int up); void do_perf_thru(char *a, char *b);
 void prog_begin(); void do_call_cob(char *name);
+void def_file(char *log, char *phys); void def_file_status(char *nm);
+void do_open(char *nm); void do_close(char *nm); void do_read_simple(char *nm); void do_read_into2(int tgt); void do_write(char *nm);
+int fl_find(char *nm); int rec_for_file(char *log);
+void move_group(int src, int dst); void leaves(int rec, int *out, int *n); int leafE(int k);
+int refmod_t(char *nm, int start, int len); int round_e(int e);
+void do_corr(char *s, char *d, int isadd); void search_begin(char *nm); void searchend();
+int qualref(char *field, char *rec); int sy_find_of(char *field, char *rec);
 %}
 %token NAME INTLIT REALLIT STRLIT PERIOD PICTURE
 %token KIDENT KDIVISION KPROGRAMID KENVIRONMENT KCONFIG KDATA KWORKING KLINKAGE KSECTION KPROCEDURE
@@ -120,6 +136,9 @@ void prog_begin(); void do_call_cob(char *name);
 %token KINSPECT KTALLYING KREPLACING KALL KLEADING KFOR KINITIALIZE KSET KTRUE KFALSE KUP KDOWN
 %token KNUMERIC KALPHABETIC KPOSITIVE KNEGATIVE KFUNCTION KHIGHVAL KLOWVAL KQUOTE
 %token KCALL KUSING KEXIT KEND KPROGRAM KENDCALL KREFERENCE KCONTENT
+%token KSELECT KASSIGN KORGANIZATION KLINE KSEQUENTIAL KRECORD KINPUT KOUTPUT KEXTEND
+%token KOPEN KCLOSE KREAD KWRITE KREWRITE KAT KFD KFILE KINPUTOUTPUT KFILECONTROL KSTATUS KENDREAD KENDWRITE KCORR
+%token KUSAGE KCOMP KCOMP3 KBINARY KPACKED KINDEXED KSEARCH KENDSEARCH KOF
 %left KOR
 %left KAND
 %right KNOT
@@ -135,12 +154,27 @@ pbegin  : { prog_begin(); } ;
 endprog : | KEND KPROGRAM NAME PERIOD | KEND KPROGRAM PERIOD ;
 
 ident_div : KIDENT KDIVISION PERIOD KPROGRAMID PERIOD NAME PERIOD { g_progid = (char *)$6; } ;
-env_opt   : | KENVIRONMENT KDIVISION PERIOD ;
+env_opt   : | KENVIRONMENT KDIVISION PERIOD iosec ;
+iosec     : | KINPUTOUTPUT KSECTION PERIOD KFILECONTROL PERIOD selects ;
+selects   : | selects select ;
+select    : KSELECT NAME KASSIGN assignto selname orgcls PERIOD { def_file((char *)$2, g_selname); } ;
+assignto  : | KTO ;
+selname   : STRLIT { g_selname = (char *)$1; } | NAME { g_selname = (char *)$1; } ;
+orgcls    : | orgcls orgcl ;
+orgcl     : KORGANIZATION isopt KLINE KSEQUENTIAL | KORGANIZATION isopt KSEQUENTIAL | KFILE KSTATUS isopt NAME { def_file_status((char *)$4); } ;
+isopt     : | KIS ;
 
-data_opt  : | KDATA KDIVISION PERIOD ws_opt linkage_opt ;
+data_opt  : | KDATA KDIVISION PERIOD file_sec ws_opt linkage_opt ;
+file_sec  : | KFILE KSECTION PERIOD fds ;
+fds       : | fds fd ;
+fd        : fdhead ditems ;
+fdhead    : KFD NAME PERIOD { g_curfd = (char *)$2; } | KFD NAME fdjunk PERIOD { g_curfd = (char *)$2; } ;
+fdjunk    : junktok | fdjunk junktok ;
+junktok   : NAME | INTLIT | KRECORD ;
 linkage_opt : | KLINKAGE KSECTION PERIOD lkmark ditems ;
-lkmark    : { g_inlinkage = 1; } ;
-ws_opt    : | KWORKING KSECTION PERIOD ditems ;
+lkmark    : { g_inlinkage = 1; g_curfd = 0; } ;
+ws_opt    : | KWORKING KSECTION PERIOD wsmark ditems ;
+wsmark    : { g_curfd = 0; } ;
 ditems    : | ditems ditem ;
 ditem     : INTLIT NAME dclauses PERIOD   { def_item($1, (char *)$2); }
           | INTLIT NAME PERIOD            { def_item($1, (char *)$2); } ;
@@ -150,7 +184,13 @@ dclause   : PICTURE              { g_dc_pic = (char *)$1; }
           | KVALUE KIS val       { g_dc_val = $3; g_dc_hasval = 1; }
           | KOCCURS INTLIT       { g_dc_occ = $2; }
           | KOCCURS INTLIT KTIMES { g_dc_occ = $2; }
-          | KTHRU val            { g_dc_thru = $2; g_dc_hasthru = 1; } ;
+          | KOCCURS INTLIT idxby  { g_dc_occ = $2; }
+          | KOCCURS INTLIT KTIMES idxby { g_dc_occ = $2; }
+          | KTHRU val            { g_dc_thru = $2; g_dc_hasthru = 1; }
+          | KUSAGE isopt usagekind
+          | usagekind ;
+idxby     : KINDEXED isopt NAME { g_dc_idx = (char *)$3; } ;
+usagekind : KCOMP | KCOMP3 | KBINARY | KPACKED | KDISPLAY ;
 val       : INTLIT     { $$ = mkE(istr($1), T_INT); }
           | REALLIT    { $$ = mkE((char *)$1, T_REAL); }
           | '-' INTLIT { $$ = mkE(F1("-%s", istr($2)), T_INT); }
@@ -172,18 +212,24 @@ bstmts    : | bstmts stmt ;
 
 stmt : KDISPLAY dlist                                { if (g_pass == 2) ap("printf(\"\\n\");\n"); }
      | KMOVE expr setmv KTO tlist
-     | KADD elist KTO target give                    { do_addsub($2, $4, "+", $5); }
-     | KSUBTRACT elist KFROM target give             { do_addsub($2, $4, "-", $5); }
-     | KMULTIPLY expr KBY target give                { do_muldiv($2, $4, "*", $5); }
-     | KDIVIDE expr KINTO target give                { do_muldiv($2, $4, "/", $5); }
-     | KDIVIDE expr KBY expr KGIVING target          { do_assign($6, bin($2, "/", $4)); }
-     | KCOMPUTE target round '=' expr                { do_assign($2, $5); }
+     | KMOVE KCORR NAME KTO NAME                      { do_corr((char *)$3, (char *)$5, 0); }
+     | KADD elist KTO target give                     { do_addsub($2, $4, "+", $5); }
+     | KADD KCORR NAME KTO NAME                       { do_corr((char *)$3, (char *)$5, 1); }
+     | KSUBTRACT elist KFROM target give              { do_addsub($2, $4, "-", $5); }
+     | KMULTIPLY expr KBY target give                 { do_muldiv($2, $4, "*", $5); }
+     | KDIVIDE expr KINTO target give                 { do_muldiv($2, $4, "/", $5); }
+     | KDIVIDE expr KBY expr KGIVING target           { do_assign($6, bin($2, "/", $4)); }
+     | KCOMPUTE target round '=' expr                 { do_assign($2, ($3 && ecls($2) == C_NUM) ? round_e($5) : $5); }
      | KACCEPT target                                { do_accept($2); }
      | KSTOP KRUN                                     { if (g_pass == 2) ap("exit(0);\n"); }
      | KGOBACK                                        { if (g_pass == 2) ap("{ __goback = 1; return; }\n"); }
      | KEXIT KPROGRAM                                 { if (g_pass == 2) ap("{ __goback = 1; return; }\n"); }
      | KEXIT
      | KCALL STRLIT cinit callusing endcall           { do_call_cob((char *)$2); }
+     | KOPEN opengrps
+     | KCLOSE closelist
+     | KREAD NAME rsimple rio                         { }
+     | KWRITE NAME writefrom                          { do_write((char *)$2); }
      | KCONTINUE
      | KGO KTO NAME                                   { if (g_pass == 2) ap(F1("%s();\n", pgname((char *)$3))); }
      | KINITIALIZE itlist
@@ -223,15 +269,27 @@ carg   : refmode expr { g_call[g_ncall++] = $2; } ;
 refmode: | KBY KREFERENCE | KBY KCONTENT ;
 endcall: | KENDCALL ;
 
+opengrps : opengrp | opengrps opengrp ;
+opengrp  : openmode openames ;
+openmode : KINPUT { g_openmode = 0; } | KOUTPUT { g_openmode = 1; } | KEXTEND { g_openmode = 2; } ;
+openames : NAME { do_open((char *)$1); } | openames NAME { do_open((char *)$2); } ;
+closelist: NAME { do_close((char *)$1); } | closelist NAME { do_close((char *)$2); } ;
+rsimple  : { do_read_simple((char *)$0); } ;
+rio      : { if (g_pass == 2) ap("}\n"); }
+         | KINTO target { do_read_into2($2); if (g_pass == 2) ap("}\n"); } ;
+writefrom: { g_writefrom = 0; } | KFROM target { g_writefrom = $2; } ;
+
 setmv : { g_movesrc = $0; } ;
 dlist : ditem_d | dlist ditem_d ;
 ditem_d : expr { do_display($1); } ;
 tlist : target { do_move_t($1); } | tlist target { do_move_t($1); } ;
 target : NAME              { $$ = name_ref((char *)$1); }
-       | NAME '(' expr ')' { $$ = name_idx((char *)$1, $3); } ;
+       | NAME KOF NAME     { $$ = qualref((char *)$1, (char *)$3); }
+       | NAME '(' expr ')' { $$ = name_idx((char *)$1, $3); }
+       | NAME '(' expr ':' expr ')' { $$ = refmod_t((char *)$1, $3, $5); } ;
 elist : expr { $$ = ag1($1); } | elist expr { $$ = agA($1, $2); } ;
 give  : { $$ = 0; } | KGIVING target { $$ = $2; } ;
-round : | KROUNDED ;
+round : { $$ = 0; } | KROUNDED { $$ = 1; } ;
 
 ifstmt : KIF cond ift thenopt bstmts iftail ;
 ift    : { if (g_pass == 2) ap(F1("if (%s) {\n", ecode($0))); } ;
@@ -247,6 +305,7 @@ onewhen: KWHEN val wopen bstmts ;
 wopen  : { if (g_pass == 2) ap(F1("} else if (__ev == %s) {\n", ecode($0))); } ;
 evdef  : | KWHEN KOTHER wdef bstmts ;
 wdef   : { if (g_pass == 2) ap("} else {\n"); } ;
+
 
 perf : NAME                                              { if (g_pass == 2) ap(F1("%s();\n", pgname((char *)$1))); }
      | NAME KTHRU NAME                                   { do_perf_thru((char *)$1, (char *)$3); }
@@ -313,6 +372,7 @@ expr : expr '+' expr   { $$ = bin($1, "+", $3); }
      | KALL STRLIT     { $$ = mkfig(cstr((char *)$2), T_STR, ((char *)$2)[0] + 1); }
      | KFUNCTION NAME '(' fargs ')' { $$ = func_call((char *)$2, $4); }
      | NAME            { $$ = name_ref((char *)$1); }
+     | NAME KOF NAME   { $$ = qualref((char *)$1, (char *)$3); }
      | NAME '(' expr ')' { $$ = name_idx((char *)$1, $3); }
      | NAME '(' expr ':' expr ')' { $$ = refmod((char *)$1, $3, $5); } ;
 fargs : expr { $$ = ag1($1); } | fargs expr { $$ = agA($1, $2); } ;
@@ -320,7 +380,7 @@ fargs : expr { $$ = ag1($1); } | fargs expr { $$ = agA($1, $2); } ;
 
 void yyerror(char *m) { printf((int)"cobol: %s (line %d)\n", (int)m, pline); }
 
-void dc_reset() { g_dc_pic = 0; g_dc_hasval = 0; g_dc_occ = 0; g_dc_hasthru = 0; }
+void dc_reset() { g_dc_pic = 0; g_dc_hasval = 0; g_dc_occ = 0; g_dc_hasthru = 0; g_dc_idx = 0; }
 
 void def_item(int level, char *nm)
 {
@@ -331,6 +391,7 @@ void def_item(int level, char *nm)
         else if (g_lastcls == C_ALNUM || g_lastcls == C_EDIT) cond = F2("(strcmp(%s, %s) == 0)", g_lastvar, ecode(g_dc_val));
         else cond = F2("(%s == %s)", g_lastvar, ecode(g_dc_val));
         sy_name[nsy] = nm; sy_cls[nsy] = C_88; sy_cond[nsy] = cond; sy_occ[nsy] = 0; sy_ref[nsy] = 0;
+        sy_level[nsy] = 88; sy_parent[nsy] = (g_lvlsp > 0) ? g_lvlstk[g_lvlsp - 1] : -1; sy_file[nsy] = g_curfd;
         sy_edit[nsy] = (g_lastcls == C_ALNUM || g_lastcls == C_EDIT) ? F2("strcpy(%s, %s)", g_lastvar, ecode(g_dc_val)) : F2("%s = %s", g_lastvar, ecode(g_dc_val));
         nsy++;
         dc_reset(); return;
@@ -338,11 +399,25 @@ void def_item(int level, char *nm)
     int cls = C_GROUP, dig = 0, dec = 0, len = 0; char *edit = "";
     if (g_dc_pic) { parse_pic(g_dc_pic); cls = g_pcls; dig = g_pdig; dec = g_pdec; len = g_plen; edit = g_pedit; }
     int occ = g_dc_occ;
-    sy_name[nsy] = nm; sy_cls[nsy] = cls; sy_dig[nsy] = dig; sy_dec[nsy] = dec; sy_len[nsy] = len; sy_occ[nsy] = occ; sy_edit[nsy] = edit; sy_ref[nsy] = g_inlinkage; nsy++;
-    if (cls != C_GROUP) { g_lastvar = cvar(nm); g_lastcls = cls; }
+    while (g_lvlsp > 0 && sy_level[g_lvlstk[g_lvlsp - 1]] >= level) g_lvlsp--;
+    sy_level[nsy] = level; sy_parent[nsy] = (g_lvlsp > 0) ? g_lvlstk[g_lvlsp - 1] : -1; sy_file[nsy] = g_curfd; sy_idx[nsy] = 0;
+    g_lvlstk[g_lvlsp++] = nsy;
+    int myi = nsy;
+    sy_name[nsy] = nm; sy_cls[nsy] = cls; sy_dig[nsy] = dig; sy_dec[nsy] = dec; sy_len[nsy] = len; sy_occ[nsy] = occ; sy_edit[nsy] = edit; sy_ref[nsy] = g_inlinkage;
+    { int a = sy_parent[myi]; int top = myi; while (a >= 0) { top = a; a = sy_parent[a]; } sy_cname[myi] = (top != myi) ? cvar(j3(sy_name[top], "-", nm)) : cvar(nm); }
+    nsy++;
+    if (g_dc_idx && occ > 0)
+    {
+        sy_idx[myi] = g_dc_idx;
+        sy_name[nsy] = g_dc_idx; sy_cls[nsy] = C_NUM; sy_dig[nsy] = 4; sy_dec[nsy] = 0; sy_len[nsy] = 0; sy_occ[nsy] = 0; sy_edit[nsy] = ""; sy_ref[nsy] = 0;
+        sy_level[nsy] = 77; sy_parent[nsy] = -1; sy_file[nsy] = 0; sy_idx[nsy] = 0; sy_cname[nsy] = cvar(g_dc_idx);
+        if (g_pass == 2) apd(j3("int ", cvar(g_dc_idx), " = 1;\n"));
+        nsy++;
+    }
+    if (cls != C_GROUP) { g_lastvar = sy_cname[myi]; g_lastcls = cls; }
     if (g_pass == 2 && cls != C_GROUP)
     {
-        char *cn = cvar(nm); char *decl;
+        char *cn = sy_cname[myi]; char *decl;
         if (g_inlinkage)
         {
             char *pt = (cls == C_NUM) ? "int* " : (cls == C_DEC) ? "double* " : "char* ";
@@ -373,16 +448,16 @@ int name_ref(char *nm)
     int i = sy_find(nm);
     if (i < 0) return mkE(cvar(nm), T_INT);
     if (sy_cls[i] == C_88) return mkE(sy_cond[i], T_LOG);
-    char *code = cvar(nm);
+    char *code = sy_cname[i];
     if (sy_ref[i] && (sy_cls[i] == C_NUM || sy_cls[i] == C_DEC)) code = F1("(*%s)", code);
     int h = mkE(code, cls2ty(sy_cls[i]));
     int dg = (sy_cls[i] == C_ALNUM || sy_cls[i] == C_EDIT) ? sy_len[i] : sy_dig[i];
-    struct E *e = (struct E *)h; e->lval = 1; e->cls = sy_cls[i]; e->dig = dg; e->dec = sy_dec[i]; e->edit = sy_edit[i];
+    struct E *e = (struct E *)h; e->lval = 1; e->cls = sy_cls[i]; e->dig = dg; e->dec = sy_dec[i]; e->edit = sy_edit[i]; e->idx = i;
     return h;
 }
 int name_idx(char *nm, int ix)
 {
-    int i = sy_find(nm); char *cn = cvar(nm);
+    int i = sy_find(nm); char *cn = (i >= 0) ? sy_cname[i] : cvar(nm);
     int h = mkE(j2(cn, j4("[(", ecode(ix), ") - 1", "]")), (i >= 0) ? cls2ty(sy_cls[i]) : T_INT);
     if (i >= 0) { int dg = (sy_cls[i] == C_ALNUM || sy_cls[i] == C_EDIT) ? sy_len[i] : sy_dig[i]; struct E *e = (struct E *)h; e->lval = 1; e->cls = sy_cls[i]; e->dig = dg; e->dec = sy_dec[i]; e->edit = sy_edit[i]; }
     return h;
@@ -424,6 +499,8 @@ void move_one(int dst, int src)
 {
     if (g_pass != 2) return;
     int c = ecls(dst); char *d = ecode(dst); char *s = ecode(src);
+    if (c == C_GROUP) { if (eidx(src) >= 0 && eidx(dst) >= 0) move_group(eidx(src), eidx(dst)); return; }
+    if (c == C_REFMOD) { struct E *e = (struct E *)dst; ap(j2(F2("__setsub(%s, (%s), ", e->code, e->rms), F2("(%s), %s);\n", e->rml, s))); return; }
     if (efig(src) > 0 && (c == C_ALNUM || c == C_EDIT)) { ap(F2("__fill(%s, %s, ", d, istr(efig(src) - 1))); ap(Fi("%d);\n", edig(dst))); return; }
     if (c == C_ALNUM) ap(j2(F2("__movestr(%s, %s, ", d, s), Fi("%d);\n", edig(dst))));
     else if (c == C_EDIT) ap(j2(F2("__edit(%s, (double)(%s), ", d, s), F1("%s);\n", cstr(eedit(dst)))));
@@ -464,6 +541,12 @@ int refmod(char *nm, int start, int len)
 {
     char *cn = cvar(nm);
     return mkE(j2("__substr(", j4(cn, ", (", ecode(start), j4(") - 1, ", ecode(len), ")", ""))), T_STR);
+}
+int refmod_t(char *nm, int start, int len)
+{
+    int h = mkE(cvar(nm), T_STR);
+    struct E *e = (struct E *)h; e->cls = C_REFMOD; e->rms = ecode(start); e->rml = ecode(len);
+    return h;
 }
 int classcmp(int e, int code)
 {
@@ -551,6 +634,7 @@ void do_perf_thru(char *a, char *b)
 void prog_begin()
 {
     g_progidx++; nsy = 0; g_nusing = 0; g_inlinkage = 0; g_progid = "PROG"; g_inits = "";
+    g_lvlsp = 0; g_curfd = 0; nfl = 0;
     if (g_pass == 1) prog_parstart[g_progidx] = npar;
 }
 void proc_start()
@@ -604,6 +688,154 @@ void do_call_cob(char *name)
     ap(j4("cob_", up, "(", j3(args, ");\n", "")));
 }
 
+void leaves(int rec, int *out, int *n)
+{
+    int k; *n = 0;
+    for (k = rec + 1; k < nsy && sy_level[k] > sy_level[rec]; k++)
+        if (sy_cls[k] != C_GROUP && sy_cls[k] != C_88) out[(*n)++] = k;
+}
+int leafE(int k)
+{
+    char *code = sy_cname[k];
+    if (sy_ref[k] && (sy_cls[k] == C_NUM || sy_cls[k] == C_DEC)) code = F1("(*%s)", code);
+    int h = mkE(code, cls2ty(sy_cls[k]));
+    int dg = (sy_cls[k] == C_ALNUM || sy_cls[k] == C_EDIT) ? sy_len[k] : sy_dig[k];
+    struct E *e = (struct E *)h; e->lval = 1; e->cls = sy_cls[k]; e->dig = dg; e->dec = sy_dec[k]; e->edit = sy_edit[k]; e->idx = k;
+    return h;
+}
+void move_group(int src, int dst)
+{
+    int sl[256], dl[256], ns, nd, i; leaves(src, sl, &ns); leaves(dst, dl, &nd);
+    int n = (ns < nd) ? ns : nd;
+    for (i = 0; i < n; i++) move_one(leafE(dl[i]), leafE(sl[i]));
+}
+int fwidth(int k) { return (sy_cls[k] == C_NUM) ? sy_dig[k] : (sy_cls[k] == C_DEC) ? sy_dig[k] + sy_dec[k] : sy_len[k]; }
+
+int fl_find(char *nm) { int i; for (i = 0; i < nfl; i++) if (strcmp(fl_log[i], nm) == 0) return i; return -1; }
+int rec_for_file(char *log) { int i; for (i = 0; i < nsy; i++) if (sy_file[i] && strcmp(sy_file[i], log) == 0 && sy_level[i] == 1) return i; return -1; }
+void def_file(char *log, char *phys)
+{
+    fl_log[nfl] = log; fl_phys[nfl] = phys; fl_status[nfl] = g_selstatus; g_selstatus = 0; nfl++;
+    if (g_pass == 2) { char *s = san(log); apd(j3("int fh_", s, ";\n")); apd(j3("int eof_", s, ";\n")); apd(j3("char ln_", s, "[1024];\n")); }
+}
+void def_file_status(char *nm) { g_selstatus = nm; }
+void do_open(char *nm)
+{
+    if (g_pass != 2) return;
+    int fi = fl_find(nm); if (fi < 0) return;
+    char *s = san(nm); char *mode = (g_openmode == 0) ? "\"r\"" : (g_openmode == 1) ? "\"w\"" : "\"a\"";
+    ap(j2(F2("fh_%s = fopen(%s, ", s, cstr(fl_phys[fi])), j2(mode, ");\n")));
+    ap(F1("eof_%s = 0;\n", s));
+}
+void do_close(char *nm)
+{
+    if (g_pass != 2) return;
+    char *s = san(nm); ap(F2("if (fh_%s) fclose(fh_%s);\n", s, s));
+}
+void emit_unpack(int rec, char *s)
+{
+    int lf[256], n, i; leaves(rec, lf, &n);
+    for (i = 0; i < n; i++)
+    {
+        int k = lf[i]; char *v = sy_cname[k]; int w = fwidth(k);
+        if (sy_cls[k] == C_ALNUM || sy_cls[k] == C_EDIT) ap(j2(F2("__rd_str(ln_%s, &__off, %s, ", s, v), Fi("%d);\n", w)));
+        else if (sy_cls[k] == C_DEC) { ap(F2("%s = __rd_dec(ln_%s, &__off, ", v, s)); ap(j2(Fi("%d, ", sy_dig[k]), Fi("%d);\n", sy_dec[k]))); }
+        else ap(j2(F2("%s = __rd_num(ln_%s, &__off, ", v, s), Fi("%d);\n", w)));
+    }
+}
+void do_read_simple(char *nm)
+{
+    g_readrec = rec_for_file(nm);
+    if (g_pass != 2) return;
+    g_readfile = san(nm); char *s = g_readfile;
+    ap("{ int __rok;\n");
+    ap(F2("__rok = (fgets(ln_%s, 1024, fh_%s) != 0);\n", s, s));
+    ap("if (__rok) {\n");
+    ap("int __off = 0; int __i = 0;\n");
+    ap(F1("while (ln_%s[__i]", s)); ap(F2(" && ln_%s[__i] != 10 && ln_%s[__i] != 13) __i++;\n", s, s)); ap(F1("ln_%s[__i] = 0;\n", s));
+    emit_unpack(g_readrec, s);
+    ap(F1("eof_%s = 0;\n", s));
+    ap(F1("} else { eof_%s = 1; }\n", s));
+    int fi = fl_find(nm);
+    if (fi >= 0 && fl_status[fi]) { int si = sy_find(fl_status[fi]); if (si >= 0) ap(F1("__movestr(%s, __rok ? \"00\" : \"10\", 2);\n", sy_cname[si])); }
+}
+void do_read_into2(int tgt)
+{
+    if (g_pass != 2) return;
+    if (eidx(tgt) >= 0 && g_readrec >= 0) { ap("if (__rok) {\n"); move_group(g_readrec, eidx(tgt)); ap("}\n"); }
+}
+void do_write(char *nm)
+{
+    if (g_pass != 2) return;
+    int ri = sy_find(nm); if (ri < 0 || sy_file[ri] == 0) return;
+    char *s = san(sy_file[ri]);
+    if (g_writefrom) move_group(eidx(g_writefrom), ri);
+    ap("{ char __wl[1024]; int __off = 0;\n");
+    int lf[256], n, i; leaves(ri, lf, &n);
+    for (i = 0; i < n; i++)
+    {
+        int k = lf[i]; char *v = sy_cname[k]; int w = fwidth(k);
+        if (sy_cls[k] == C_ALNUM || sy_cls[k] == C_EDIT) ap(j2(F1("__wr_str(__wl, &__off, %s, ", v), Fi("%d);\n", w)));
+        else if (sy_cls[k] == C_DEC) { ap(F1("__wr_dec(__wl, &__off, %s, ", v)); ap(j2(Fi("%d, ", sy_dig[k]), Fi("%d);\n", sy_dec[k]))); }
+        else ap(j2(F1("__wr_num(__wl, &__off, %s, ", v), Fi("%d);\n", w)));
+    }
+    ap("__wl[__off] = 0;\n");
+    ap(F1("fprintf(fh_%s, \"%%s\\n\", __wl);\n", s));
+    ap("}\n");
+}
+int sy_find_of(char *field, char *rec)
+{
+    int i; for (i = nsy - 1; i >= 0; i--)
+        if (strcmp(sy_name[i], field) == 0) { int a = i; while (a >= 0) { if (strcmp(sy_name[a], rec) == 0) return i; a = sy_parent[a]; } }
+    return -1;
+}
+int qualref(char *field, char *rec)
+{
+    int i = sy_find_of(field, rec);
+    if (i < 0) return mkE(cvar(field), T_INT);
+    return leafE(i);
+}
+int round_e(int e)
+{
+    char *c = ecode(e); char *x = j3("((int)(((", c, ") >= 0) ? ((");
+    x = j3(x, c, ") + 0.5) : ((");
+    x = j3(x, c, ") - 0.5)))");
+    return mkE(x, T_INT);
+}
+void do_corr(char *s, char *d, int isadd)
+{
+    if (g_pass != 2) return;
+    int si = sy_find(s), di = sy_find(d); if (si < 0 || di < 0) return;
+    int sl[256], dl[256], ns, nd, i, j; leaves(si, sl, &ns); leaves(di, dl, &nd);
+    for (i = 0; i < ns; i++)
+        for (j = 0; j < nd; j++)
+            if (strcmp(sy_name[sl[i]], sy_name[dl[j]]) == 0)
+            {
+                if (isadd) { int de = leafE(dl[j]), se = leafE(sl[i]); ap(F2("%s = %s + ", ecode(de), ecode(de))); ap(F1("(%s);\n", ecode(se))); }
+                else move_one(leafE(dl[j]), leafE(sl[i]));
+                break;
+            }
+}
+void search_begin(char *nm)
+{
+    g_searchtab = sy_find(nm);
+    if (g_pass != 2) return;
+    g_atendbuf = "";
+    char *idx = (g_searchtab >= 0) ? sy_idx[g_searchtab] : 0;
+    g_searchidx = idx ? cvar(idx) : "__noidx";
+    int occ = (g_searchtab >= 0) ? sy_occ[g_searchtab] : 0;
+    ap("{ int __found = 0;\n");
+    ap(F2("while (%s <= %s && __found == 0) {\n", g_searchidx, istr(occ)));
+}
+void searchend()
+{
+    if (g_pass != 2) return;
+    ap(F2("if (__found == 0) %s = %s + 1;\n", g_searchidx, g_searchidx));
+    ap("}\n");
+    ap("if (__found == 0) {\n"); ap(g_atendbuf); ap("}\n");
+    ap("}\n");
+}
+
 char *PRELUDE =
 "int __goback;\n"
 "void __disp_num(int v,int d){char t[40];int neg=0;int n=0;if(v<0){neg=1;v=-v;}if(v==0)t[n++]='0';while(v>0){t[n++]='0'+v%10;v/=10;}while(n<d)t[n++]='0';char b[48];int j=0;if(neg)b[j++]='-';while(n>0)b[j++]=t[--n];b[j]=0;printf(\"%s\",b);}\n"
@@ -621,7 +853,14 @@ char *PRELUDE =
 "char* __reverse(char*s){static char b[4][256];static int bi=0;char*r=b[bi];bi=(bi+1)&3;int n=strlen(s),i;for(i=0;i<n;i++)r[i]=s[n-1-i];r[n]=0;return r;}\n"
 "int __isnum(char*s){int i=0,any=0;while(s[i]){if(s[i]!=' '){if(s[i]<'0'||s[i]>'9')return 0;any=1;}i++;}return any;}\n"
 "int __isalpha(char*s){int i=0,any=0;while(s[i]){if(s[i]!=' '){if(!((s[i]>='A'&&s[i]<='Z')||(s[i]>='a'&&s[i]<='z')))return 0;any=1;}i++;}return any;}\n"
-"void __edit(char*out,double dv,char*pic){int L=strlen(pic);int fd=0,sd=0,i;for(i=0;i<L;i++){if(pic[i]=='.')sd=1;else if(sd&&(pic[i]=='9'||pic[i]=='Z'))fd++;}int idn=0;for(i=0;i<L;i++){if(pic[i]=='.')break;if(pic[i]=='9'||pic[i]=='Z')idn++;}int neg=dv<0;double a=neg?-dv:dv;int sc=1,k;for(k=0;k<fd;k++)sc*=10;int nn=(int)(a*sc+0.5);int ip=nn/sc;int fp=nn%sc;char id[32];int ic=0;if(ip==0)id[ic++]='0';while(ip>0){id[ic++]='0'+ip%10;ip/=10;}char fdg[20];for(k=fd-1;k>=0;k--){fdg[k]='0'+fp%10;fp/=10;}fdg[fd]=0;int o=0,dp=0,started=0;for(i=0;i<L;i++){char c=pic[i];if(c=='.')break;if(c=='9'||c=='Z'){int sl=idn-dp;char dd=(sl<=ic)?id[sl-1]:'0';if(c=='Z'&&!started&&dd=='0'){out[o++]=' ';}else{started=1;out[o++]=dd;}dp++;}else if(c==','){out[o++]=started?',':' ';}else if(c=='$'){out[o++]='$';}else if(c=='-'){out[o++]=neg?'-':' ';}else if(c=='+'){out[o++]=neg?'-':'+';}else{out[o++]=c;}}if(fd>0){out[o++]='.';for(k=0;k<fd;k++)out[o++]=fdg[k];}out[o]=0;}\n";
+"void __edit(char*out,double dv,char*pic){int L=strlen(pic);int fd=0,sd=0,i;for(i=0;i<L;i++){if(pic[i]=='.')sd=1;else if(sd&&(pic[i]=='9'||pic[i]=='Z'))fd++;}int idn=0;for(i=0;i<L;i++){if(pic[i]=='.')break;if(pic[i]=='9'||pic[i]=='Z')idn++;}int neg=dv<0;double a=neg?-dv:dv;int sc=1,k;for(k=0;k<fd;k++)sc*=10;int nn=(int)(a*sc+0.5);int ip=nn/sc;int fp=nn%sc;char id[32];int ic=0;if(ip==0)id[ic++]='0';while(ip>0){id[ic++]='0'+ip%10;ip/=10;}char fdg[20];for(k=fd-1;k>=0;k--){fdg[k]='0'+fp%10;fp/=10;}fdg[fd]=0;int o=0,dp=0,started=0;for(i=0;i<L;i++){char c=pic[i];if(c=='.')break;if(c=='9'||c=='Z'){int sl=idn-dp;char dd=(sl<=ic)?id[sl-1]:'0';if(c=='Z'&&!started&&dd=='0'){out[o++]=' ';}else{started=1;out[o++]=dd;}dp++;}else if(c==','){out[o++]=started?',':' ';}else if(c=='$'){out[o++]='$';}else if(c=='-'){out[o++]=neg?'-':' ';}else if(c=='+'){out[o++]=neg?'-':'+';}else{out[o++]=c;}}if(fd>0){out[o++]='.';for(k=0;k<fd;k++)out[o++]=fdg[k];}out[o]=0;}\n"
+"void __wr_str(char*b,int*o,char*s,int w){int i=0;while(i<w&&s[i]){b[*o]=s[i];(*o)++;i++;}while(i<w){b[*o]=' ';(*o)++;i++;}}\n"
+"void __wr_num(char*b,int*o,int v,int w){char t[32];int i;if(v<0)v=-v;for(i=w-1;i>=0;i--){t[i]='0'+v%10;v/=10;}for(i=0;i<w;i++){b[*o]=t[i];(*o)++;}}\n"
+"void __wr_dec(char*b,int*o,double v,int dig,int dec){int sc=1,k;for(k=0;k<dec;k++)sc*=10;int n=(int)(v*sc+0.5);__wr_num(b,o,n,dig+dec);}\n"
+"void __rd_str(char*l,int*o,char*d,int w){int i;for(i=0;i<w;i++){d[i]=l[*o]?l[*o]:' ';if(l[*o])(*o)++;}d[w]=0;}\n"
+"int __rd_num(char*l,int*o,int w){int v=0,i;for(i=0;i<w;i++){if(l[*o]>='0'&&l[*o]<='9')v=v*10+(l[*o]-'0');if(l[*o])(*o)++;}return v;}\n"
+"double __rd_dec(char*l,int*o,int dig,int dec){int n=__rd_num(l,o,dig+dec);int sc=1,k;for(k=0;k<dec;k++)sc*=10;return (double)n/sc;}\n"
+"void __setsub(char*b,int start,int len,char*s){int p=start-1;int i=0;while(i<len&&s[i]){b[p+i]=s[i];i++;}while(i<len){b[p+i]=' ';i++;}}\n";
 
 void setext(char *p, char *e) { int n = strlen(p), i = n - 1; while (i > 0 && p[i] != '.' && p[i] != '\\' && p[i] != '/') i--; if (p[i] == '.') p[i + 1] = 0; else strcat(p, "."); strcat(p, e); }
 

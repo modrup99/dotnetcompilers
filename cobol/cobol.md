@@ -27,14 +27,19 @@ DATA DIVISION.            WORKING-STORAGE SECTION.
 01 NAME     PIC X(20) VALUE "Ada".     *> text
 01 AMOUNT   PIC 9(5)V99.               *> implied decimal point
 01 PRETTY   PIC ZZ,ZZ9.99.             *> edited (zero-suppress, comma, point)
-01 TABLE-X  PIC 9(3) OCCURS 10.        *> array, subscript TABLE-X(i), 1-based
+01 TABLE-X  PIC 9(3) OCCURS 10 INDEXED BY IX.  *> array, subscript TABLE-X(i), 1-based
+01 N        PIC 9(4) USAGE COMP.       *> usage (COMP/COMP-3/BINARY/DISPLAY)
 01 AGE      PIC 9(3) VALUE 30.
    88 IS-ADULT VALUE 18 THRU 120.      *> condition-name (a boolean test)
+01 REC.                                *> group item (record)
+   05 FLD-A PIC X(8).
+   05 FLD-B PIC 9(3).
 PROCEDURE DIVISION.
     DISPLAY "text" FIELD.       MOVE x TO y.       ACCEPT y.   INITIALIZE y.
-    MOVE ALL "*" TO y.    MOVE HIGH-VALUES TO y.   MOVE SPACES TO y.   y(2:3)  *> ref-mod
-    ADD a b TO c [GIVING d].    SUBTRACT a FROM b. MULTIPLY a BY b. DIVIDE a INTO b.
-    COMPUTE d = (a + b) * c.
+    MOVE ALL "*" TO y.    MOVE HIGH-VALUES TO y.   MOVE SPACES TO y.   MOVE y(2:3) TO z.
+    MOVE REC1 TO REC2.    MOVE CORRESPONDING G1 TO G2.    FLD-A OF REC   *> group / OF
+    ADD a b TO c [GIVING d] [ROUNDED]. SUBTRACT a FROM b. MULTIPLY a BY b. DIVIDE a INTO b.
+    COMPUTE d ROUNDED = (a + b) * c.
     IF x IS NUMERIC / IS POSITIVE / IS NEGATIVE ...   IF cond THEN ... ELSE ... END-IF.
     EVALUATE n WHEN 1 ... WHEN 2 ... WHEN OTHER ... END-EVALUATE.
     PERFORM PARA.   PERFORM A THRU C.   PERFORM PARA 5 TIMES.   PERFORM PARA UNTIL cond.
@@ -86,8 +91,41 @@ C#/VB.NET (Activity 9). Built-in intrinsics: `FUNCTION UPPER-CASE / LOWER-CASE /
 
 `DISPLAY a b c` writes the operands (no separators) and a newline; numeric items print
 per their PICTURE (zero-padded), edited items print their formatted text. `ACCEPT x`
-reads a line/number into `x`. (Console I/O only; file I/O — `SELECT`/`FD`/`READ`/`WRITE`
-— is a subset boundary.)
+reads a line/number into `x`.
+
+**File I/O** (line-sequential). A file is declared in the ENVIRONMENT and DATA divisions
+and driven by `OPEN`/`READ`/`WRITE`/`CLOSE`:
+
+```cobol
+ENVIRONMENT DIVISION.
+INPUT-OUTPUT SECTION.
+FILE-CONTROL.
+    SELECT EMP-FILE ASSIGN TO "employees.dat"
+        ORGANIZATION IS LINE SEQUENTIAL
+        FILE STATUS IS WS-ST.
+DATA DIVISION.
+FILE SECTION.
+FD EMP-FILE.
+01 EMP-REC.
+   05 EMP-ID   PIC 9(4).
+   05 EMP-NAME PIC X(12).
+   05 EMP-SAL  PIC 9(6).
+...
+    OPEN OUTPUT EMP-FILE.   WRITE EMP-REC.   CLOSE EMP-FILE.
+    OPEN INPUT EMP-FILE.
+    READ EMP-FILE.
+    PERFORM UNTIL WS-ST = "10"
+        ... process EMP-REC ...
+        READ EMP-FILE
+    END-PERFORM.
+    CLOSE EMP-FILE.
+```
+
+Each record's elementary fields are packed/unpacked to fixed-width columns. `READ` sets
+the `FILE STATUS` field to `"00"` (read) or `"10"` (end-of-file), which the loop tests —
+the priming-read idiom above. `READ … INTO ws-rec` also copies the record into a
+working-storage group. (`READ` uses FILE STATUS rather than an inline `AT END` clause —
+see *Subset boundaries*.)
 
 ## Graphics
 
@@ -107,14 +145,23 @@ to format a money report — COBOL's native idea of drawing.
 
 ## Subset boundaries
 
-A substantial core, not the whole language. Not included: fixed (columnar) format; the
-ENVIRONMENT DIVISION beyond a header; file I/O (`SELECT`/`FD`/`READ`/`WRITE`); the
-report writer; `COPY` copybooks; `REDEFINES`; group-level moves (each elementary item is
-an independent variable). Reference modification (`x(start:len)`) is supported as a
-*source* (read), not yet as an assignment target. `INSPECT … LEADING` is treated like
-`ALL`. C#/VB.NET interop drives paragraph entry points (and `STOP RUN`/`DISPLAY` work
-from them); the `CALL … USING` mechanism (by-reference parameters) is for COBOL-to-COBOL
-calls within the run unit.
+A broad core. **Included** (beyond the basics): line-sequential file I/O
+(`SELECT`/`ASSIGN`/`FD`/`OPEN`/`READ`/`WRITE`/`CLOSE`/`FILE STATUS`); group items with a
+real record hierarchy and **group-level `MOVE`**; **reference modification**
+(`x(start:len)`) as source *and* target; `OF`/`IN` qualification of duplicate field
+names; `MOVE`/`ADD CORRESPONDING`; `USAGE` (`COMP`/`COMP-3`/`BINARY`/`DISPLAY`, stored as
+the natural .NET type); `ROUNDED`; `OCCURS … INDEXED BY`; `STRING`/`UNSTRING`/`INSPECT`;
+intrinsic `FUNCTION`s; and subprograms (`LINKAGE`/`PROCEDURE DIVISION USING`/`CALL`).
+
+**Not included** (a managed-runtime/LALR-front-end takes precedence — your stated
+constraint): fixed (columnar) source format; indexed/relative file organizations and
+`REWRITE` (line-sequential only); the report writer; `COPY` copybooks; `REDEFINES`
+(overlapping storage doesn't fit the typed model); `SEARCH` and `EVALUATE TRUE` (their
+`cond`/statement-list-in-clause shape conflicts with our small LALR table); a `READ`
+inline `AT END`/`NOT AT END` clause (use `FILE STATUS` instead, as shown above). `INSPECT
+… LEADING` is treated like `ALL`. C#/VB.NET interop drives paragraph entry points; the
+`CALL … USING` mechanism (by-reference parameters) is for COBOL-to-COBOL calls within the
+run unit.
 
 ---
 

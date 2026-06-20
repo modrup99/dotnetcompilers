@@ -109,6 +109,38 @@ int kw(char *raw)
     if (strcmp(b, "END-CALL") == 0) return KENDCALL;
     if (strcmp(b, "REFERENCE") == 0) return KREFERENCE;
     if (strcmp(b, "CONTENT") == 0) return KCONTENT;
+    if (strcmp(b, "SELECT") == 0) return KSELECT;
+    if (strcmp(b, "ASSIGN") == 0) return KASSIGN;
+    if (strcmp(b, "ORGANIZATION") == 0) return KORGANIZATION;
+    if (strcmp(b, "LINE") == 0) return KLINE;
+    if (strcmp(b, "SEQUENTIAL") == 0) return KSEQUENTIAL;
+    if (strcmp(b, "RECORD") == 0) return KRECORD;
+    if (strcmp(b, "INPUT") == 0) return KINPUT;
+    if (strcmp(b, "OUTPUT") == 0) return KOUTPUT;
+    if (strcmp(b, "EXTEND") == 0) return KEXTEND;
+    if (strcmp(b, "OPEN") == 0) return KOPEN;
+    if (strcmp(b, "CLOSE") == 0) return KCLOSE;
+    if (strcmp(b, "READ") == 0) return KREAD;
+    if (strcmp(b, "WRITE") == 0) return KWRITE;
+    if (strcmp(b, "REWRITE") == 0) return KREWRITE;
+    if (strcmp(b, "AT") == 0) return KAT;
+    if (strcmp(b, "FD") == 0) return KFD;
+    if (strcmp(b, "FILE") == 0) return KFILE;
+    if (strcmp(b, "INPUT-OUTPUT") == 0) return KINPUTOUTPUT;
+    if (strcmp(b, "FILE-CONTROL") == 0) return KFILECONTROL;
+    if (strcmp(b, "STATUS") == 0) return KSTATUS;
+    if (strcmp(b, "END-READ") == 0) return KENDREAD;
+    if (strcmp(b, "END-WRITE") == 0) return KENDWRITE;
+    if (strcmp(b, "CORRESPONDING") == 0 || strcmp(b, "CORR") == 0) return KCORR;
+    if (strcmp(b, "USAGE") == 0) return KUSAGE;
+    if (strcmp(b, "COMP") == 0 || strcmp(b, "COMPUTATIONAL") == 0) return KCOMP;
+    if (strcmp(b, "COMP-3") == 0 || strcmp(b, "COMPUTATIONAL-3") == 0) return KCOMP3;
+    if (strcmp(b, "BINARY") == 0) return KBINARY;
+    if (strcmp(b, "PACKED-DECIMAL") == 0) return KPACKED;
+    if (strcmp(b, "INDEXED") == 0) return KINDEXED;
+    if (strcmp(b, "SEARCH") == 0) return KSEARCH;
+    if (strcmp(b, "END-SEARCH") == 0) return KENDSEARCH;
+    if (strcmp(b, "OF") == 0 || strcmp(b, "IN") == 0) return KOF;
     return 0;
 }
 

@@ -15,11 +15,11 @@ char topcode[200000]; int ntop;
 char usercode[200000]; int nuser;
 
 /* ---- symbols: 0 = $end. terminals then nonterminals, interleaved by use ---- */
-char symname[256][40];
-int  symterm[256];     /* 1 = terminal */
-int  symprec[256];     /* precedence level (0 = none) */
-int  symassoc[256];    /* 0 none, 1 left, 2 right, 3 nonassoc */
-int  tokcode[256];     /* token code yylex returns (terminals) */
+char symname[512][40];
+int  symterm[512];     /* 1 = terminal */
+int  symprec[512];     /* precedence level (0 = none) */
+int  symassoc[512];    /* 0 none, 1 left, 2 right, 3 nonassoc */
+int  tokcode[512];     /* token code yylex returns (terminals) */
 int  nsym;
 int  preclevel;
 int  nextcode;         /* next named-token code (starts 257) */
@@ -252,8 +252,8 @@ void read_rules(void)
 void read_usercode(void) { while (p < srclen) { if (nuser >= 199999) die("user-code too long", nuser); usercode[nuser++] = src[p++]; } usercode[nuser] = 0; }
 
 /* ======================= FIRST / nullable ======================= */
-int nullable[256];
-int firstbs[256][8];   /* bitset over symbol ids (256 bits) */
+int nullable[512];
+int firstbs[512][16];   /* bitset over symbol ids (512 bits) */
 
 int getb(int *bs, int i) { return (bs[i >> 5] >> (i & 31)) & 1; }
 void setb(int *bs, int i) { bs[i >> 5] = bs[i >> 5] | (1 << (i & 31)); }
@@ -261,7 +261,7 @@ void setb(int *bs, int i) { bs[i >> 5] = bs[i >> 5] | (1 << (i & 31)); }
 void compute_first(void)
 {
     int i, j, k;
-    for (i = 0; i < nsym; i++) { nullable[i] = 0; for (j = 0; j < 8; j++) firstbs[i][j] = 0; }
+    for (i = 0; i < nsym; i++) { nullable[i] = 0; for (j = 0; j < 16; j++) firstbs[i][j] = 0; }
     for (i = 0; i < nsym; i++) if (symterm[i]) setb(firstbs[i], i);
 
     int changed = 1;
@@ -318,7 +318,7 @@ void closure(void)
         if (dot >= plen[prod]) continue;
         int B = prhs[prod][dot];
         if (symterm[B]) continue;
-        int fb[8]; int z; for (z = 0; z < 8; z++) fb[z] = 0;
+        int fb[16]; int z; for (z = 0; z < 16; z++) fb[z] = 0;
         first_of_tail(prod, dot + 1, la, fb);
         int q;
         for (q = 0; q < nprod; q++) if (plhs[q] == B)
@@ -342,7 +342,7 @@ void sortints(int *a, int n) { int i, j; for (i = 1; i < n; i++) { int v = a[i];
 #define CORESZ 1024
 int pool[15000000];             /* MAXST * STRIDE items; state s occupies [s*STRIDE .. +slen[s]) */
 int slen[MAXST]; int nstate;
-int trans[MAXST][256];
+int trans[MAXST][512];
 int cstore[3072000]; int clen[MAXST];   /* MAXST * CORESZ : LR(0) core (sorted distinct it/256) per state */
 int hh[8192]; int hn[MAXST];             /* hash buckets over the core, for fast lookup */
 int wq[24000]; int qh, qt; int inq[MAXST];   /* worklist ring of states to (re)process */
@@ -400,7 +400,7 @@ int find_or_merge(void)
     for (k = 0; k < cn; k++) cstore[s * CORESZ + k] = core[k];
     clen[s] = cn;
     hn[s] = hh[h]; hh[h] = s;
-    int x; for (x = 0; x < 256; x++) trans[s][x] = -1;
+    int x; for (x = 0; x < 512; x++) trans[s][x] = -1;
     enqueue(s);
     return s;
 }
@@ -612,7 +612,7 @@ int main(int argc, char **argv)
     plhs[0] = sprime; prhs[0][0] = startsym; plen[0] = 1; pact[0][0] = 0; pprec[0] = 0;
 
     if (verbose) { eputs("yacc: nsym="); eputn(nsym); eputs(" nprod="); eputn(nprod); eputs("\n"); }
-    if (nsym >= 256) die("too many symbols", nsym);
+    if (nsym >= 512) die("too many symbols", nsym);
     if (nprod >= 600) die("too many productions", nprod);
     compute_first();
     build_lalr();
