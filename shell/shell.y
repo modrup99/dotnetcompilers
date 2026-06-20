@@ -539,6 +539,7 @@ int print_usage(char *c)
     else if (streq(c, "lpwd")) sh_write((int)"usage: lpwd   (print the REAL Windows working directory)\n");
     else if (streq(c, "lls")) sh_write((int)"usage: lls [-l] [-a] [path]   (list a REAL Windows directory)\n");
     else if (streq(c, "vfs")) sh_write((int)"usage: vfs on [DIR] | off | status   (virtual filesystem; mounts are the home/bin/etc/... shell vars)\n");
+    else if (streq(c, "refresh")) sh_write((int)"usage: refresh   (reload ~/.ilshellrc and the .quicklaunch menu)\n");
     else if (streq(c, "echo")) sh_write((int)"usage: echo [args...]\n");
     else if (streq(c, "export")) sh_write((int)"usage: export NAME[=value]...\n");
     else if (streq(c, "set")) sh_write((int)"usage: set   (list shell variables)\n");
@@ -599,6 +600,7 @@ int bi_help(int n, int *argv, int start)
     sh_write((int)"  files:   ls cat cp mv rm mkdir touch ln find\n");
     sh_write((int)"  vfs:     vfs on [DIR]/off/status  (virtual / + /home + /bin + /etc + /include + /lib + /tmp)\n");
     sh_write((int)"           lcd lpwd lls  reach the REAL Windows filesystem; --home DIR enables it at startup\n");
+    sh_write((int)"           refresh  reloads ~/.ilshellrc and the quicklaunch menu\n");
     sh_write((int)"  build:   make [-f file] [VAR=val] [target]\n");
     sh_write((int)"  text:    grep sort wc head tail cut paste more sed\n");
     sh_write((int)"  tools:   bc date time man ps\n");
@@ -701,6 +703,21 @@ int bi_ps(int n, int *argv, int start)
     return 0;
 }
 
+int source_file(char *path);   /* defined just below */
+/* refresh — re-run the startup script (.ilshellrc / .bashrc) and ask the GUI to rebuild
+ * its quicklaunch menu, so config edits take effect without restarting the shell. */
+int bi_refresh(void)
+{
+    char *base = g_vfs ? vmap("/home") : getvar("HOME");
+    char rc[1100];
+    sprintf((int)rc, (int)"%s\\.ilshellrc", (int)base);
+    if (rt_exists((int)rc)) source_file(rc);
+    else { sprintf((int)rc, (int)"%s\\.bashrc", (int)base); if (rt_exists((int)rc)) source_file(rc); }
+    rt_reloadmenu();                 /* GUI host re-reads .quicklaunch */
+    sh_write((int)"refreshed (.ilshellrc + quicklaunch)\n");
+    return 0;
+}
+
 int source_file(char *path)
 {
     char *d = (char *)rt_slurp((int)vmap(path));
@@ -762,6 +779,7 @@ int run_command(int n, int *argv, int start)
     if (strcmp(cmd, "lpwd") == 0) return bi_lpwd();
     if (strcmp(cmd, "lls") == 0) return bi_lls(n, argv, start);
     if (strcmp(cmd, "vfs") == 0) return bi_vfs(n, argv, start);
+    if (strcmp(cmd, "refresh") == 0) return bi_refresh();
     if (strcmp(cmd, "export") == 0) return bi_export(n, argv, start);
     if (strcmp(cmd, "set") == 0) return bi_set();
     if (strcmp(cmd, "true") == 0) return 0;

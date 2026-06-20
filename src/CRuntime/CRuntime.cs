@@ -599,7 +599,9 @@ public static class CRuntime
     public static Func<int> HostCols, HostRows;
     public static Action HostClear;
     public static Action<int, int> HostGoto;
+    public static Action HostReloadMenu;      // ask the GUI host to rebuild its context menu
     public static bool HostMode => HostOut != null;
+    public static int rt_reloadmenu() { HostReloadMenu?.Invoke(); return 0; }
 
     // ---- graphics: a simple ARGB framebuffer rasterized in-process; a host
     // (Avalonia) blits it to a window and feeds back mouse position + quit. ----

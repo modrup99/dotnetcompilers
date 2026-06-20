@@ -58,6 +58,10 @@ Get-ChildItem $repo -Directory | Where-Object { $_.Name -notin @("dist","install
 StageFile "shell\dot-ilshellrc.sample"
 StageFile "shell\dot-quicklaunch.sample"
 
+# seed home directory (becomes the persistent /home on install)
+Copy-Item (Join-Path $PSScriptRoot "home") $dest -Recurse -Force
+Write-Host "  staged home (seed)"
+
 # the per-machine installer + uninstaller travel inside the package
 Copy-Item "$PSScriptRoot\install.ps1"   $dest -Force
 Copy-Item "$PSScriptRoot\uninstall.ps1" $dest -Force

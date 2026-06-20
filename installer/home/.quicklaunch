@@ -1,0 +1,8 @@
+# Right-click menu entries for the windowed terminal: "Label = command".
+# Edit this file, then run `refresh` in the shell to reload the menu (and .ilshellrc).
+Show layout    = vfs status
+List /bin      = ls /bin
+Edit startup   = vi /home/.ilshellrc
+Edit this menu = vi /home/.quicklaunch
+Reload config  = refresh
+Calculator     = bc

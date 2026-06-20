@@ -101,6 +101,7 @@ internal sealed class TerminalControl : Control
         CRuntime.HostRows = () => _grid.Rows;
         CRuntime.HostClear = () => { lock (_grid) _grid.Process(new byte[] { 27, (byte)'[', (byte)'2', (byte)'J' }); };
         CRuntime.HostGoto = (x, y) => { lock (_grid) { _grid.Cx = x; _grid.Cy = y; } };
+        CRuntime.HostReloadMenu = () => Dispatcher.UIThread.Post(() => ContextMenu = BuildMenu());   // `refresh` re-reads .quicklaunch
 
         new Thread(RunShell) { IsBackground = true }.Start();
 
