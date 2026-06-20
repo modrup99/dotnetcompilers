@@ -76,10 +76,25 @@ Beyond the file/text coreutils, ilsh has these built in (type `NAME -h` for usag
 | `ps [-e]` | list shell-started background jobs; `-e` also dumps the OS `tasklist` |
 | `vi FILE` | modal editor with **syntax highlighting** (`:syntax on`/`:syntax off`) |
 
-`vi` colors keywords, strings, comments (`//` and `/* */`, tracked across lines),
-numbers, and preprocessor lines. The keyword set follows the file extension (C by
-default; Pascal `.pas`, Lua `.lua`). Highlighting is on by default; `:syntax off` disables
-it and `:syntax on` re-enables it.
+`vi` colors keywords, strings, comments, numbers, and (for C) preprocessor lines, with a
+**language profile chosen by file extension** — comment and string syntax follow the
+language, not just the keyword set:
+
+| Language | Extensions | Line comment | Block comment |
+|---|---|---|---|
+| C / C++ | `.c .h .cpp .cc .y .l` (default) | `//` | `/* */` |
+| Pascal | `.pas .pp` | `//` | `{ }` and `(* *)` |
+| Lua | `.lua` | `--` | `--[[ ]]` |
+| Lisp/Scheme | `.lisp .lsp .scm .el` | `;` | `#\| \|#` |
+| Shell | `.sh` | `#` | — |
+| Fortran | `.f90 .f .f95` | `!` | — |
+| Ada | `.adb .ads` | `--` | — |
+| Prolog | `.pl .pro` | `%` | `/* */` |
+| BASIC | `.bas` | `'` | — |
+
+Keywords are matched case-insensitively for Pascal/Ada/Fortran/BASIC. Block comments are
+tracked across lines. Highlighting is on by default; `:syntax off` disables it and
+`:syntax on` re-enables it.
 
 ## The windowed terminal (ilterm)
 

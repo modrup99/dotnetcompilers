@@ -92,19 +92,56 @@ int vi_save(char *path)
  * `:syntax on` / `:syntax off`. */
 void vout(char *s);     /* defined just below */
 int vsyntax;            /* 1 = highlight (default on) */
-char *g_kw;             /* space-delimited keyword set for the current file type */
-char *VKW_C   = " auto break case char const continue default do double else enum extern float for goto if int long register return short signed sizeof static struct switch typedef union unsigned void volatile while ";
-char *VKW_PAS = " and array begin case const div do downto else end file for function goto if in label mod nil not of or packed procedure program record repeat set then to type until var while with ";
-char *VKW_LUA = " and break do else elseif end false for function goto if in local nil not or repeat return then true until while ";
+/* per-language profile, selected by file extension in vi_set_lang */
+char *g_kw;             /* space-delimited keyword set (lowercase) */
+char *g_lc;             /* line-comment marker ("" = none) */
+char *g_bo, *g_bc;      /* block-comment open/close ("" = none) */
+char *g_bo2, *g_bc2;    /* a second block-comment style (e.g. Pascal (* *)) */
+char *g_str;            /* characters that open a string/char literal */
+int g_hash;             /* 1 = a leading # is a (C) preprocessor line */
+int g_ci;               /* 1 = case-insensitive keywords (Pascal/Ada/Fortran/BASIC) */
+
+/* keyword tables (lowercase; matched case-insensitively when g_ci) */
+char *VKW_C    = " auto break case char const continue default do double else enum extern float for goto if int long register return short signed sizeof static struct switch typedef union unsigned void volatile while ";
+char *VKW_PAS  = " and array begin case const div do downto else end file for function goto if in label mod nil not of or packed procedure program record repeat set then to type until var while with unit uses interface implementation ";
+char *VKW_LUA  = " and break do else elseif end false for function goto if in local nil not or repeat return then true until while ";
+char *VKW_LISP = " define lambda if cond let let* letrec begin quote set car cdr cons list else and or not case when unless do define-syntax ";
+char *VKW_SH   = " if then elif else fi for while until do done case esac in function select return break continue export alias unalias unset local readonly source ";
+char *VKW_FOR  = " program end subroutine function module use implicit none integer real double precision complex logical character if then else endif elseif do enddo while continue call return stop print write read open close allocate deallocate select case where contains interface type intent parameter ";
+char *VKW_ADA  = " procedure function package body is begin end if then elsif else case when loop while for in out return declare type subtype record array of and or not xor mod rem abs new with use null exit constant range ";
+char *VKW_PROL = " is mod rem div true fail not module use_module dynamic discontiguous ";
+char *VKW_BAS  = " if then else elseif end endif for to step next while wend do loop until select case sub function dim as print input goto gosub return let rem declare shared common const type exit and or not mod redim ";
+
+/* choose comment/string/keyword profile from the file extension; default = C */
+void vi_set_lang(char *ext)
+{
+    g_kw = VKW_C; g_lc = "//"; g_bo = "/*"; g_bc = "*/"; g_bo2 = ""; g_bc2 = ""; g_str = "\"'"; g_hash = 1; g_ci = 0;
+    if (ext == 0) return;
+    if (streq(ext, ".pas") || streq(ext, ".pp"))                       { g_kw = VKW_PAS;  g_lc = "//"; g_bo = "{";  g_bc = "}";  g_bo2 = "(*"; g_bc2 = "*)"; g_str = "'";   g_hash = 0; g_ci = 1; }
+    else if (streq(ext, ".lua"))                                       { g_kw = VKW_LUA;  g_lc = "--"; g_bo = "--[["; g_bc = "]]"; g_bo2 = ""; g_bc2 = ""; g_str = "\"'"; g_hash = 0; g_ci = 0; }
+    else if (streq(ext, ".lisp") || streq(ext, ".lsp") || streq(ext, ".scm") || streq(ext, ".el")) { g_kw = VKW_LISP; g_lc = ";"; g_bo = "#|"; g_bc = "|#"; g_bo2 = ""; g_bc2 = ""; g_str = "\""; g_hash = 0; g_ci = 0; }
+    else if (streq(ext, ".sh"))                                        { g_kw = VKW_SH;   g_lc = "#";  g_bo = ""; g_bc = ""; g_bo2 = ""; g_bc2 = ""; g_str = "\"'"; g_hash = 0; g_ci = 0; }
+    else if (streq(ext, ".f90") || streq(ext, ".f") || streq(ext, ".f95") || streq(ext, ".for")) { g_kw = VKW_FOR; g_lc = "!"; g_bo = ""; g_bc = ""; g_bo2 = ""; g_bc2 = ""; g_str = "\"'"; g_hash = 0; g_ci = 1; }
+    else if (streq(ext, ".adb") || streq(ext, ".ads"))                 { g_kw = VKW_ADA;  g_lc = "--"; g_bo = ""; g_bc = ""; g_bo2 = ""; g_bc2 = ""; g_str = "\""; g_hash = 0; g_ci = 1; }
+    else if (streq(ext, ".pl") || streq(ext, ".pro"))                  { g_kw = VKW_PROL; g_lc = "%";  g_bo = "/*"; g_bc = "*/"; g_bo2 = ""; g_bc2 = ""; g_str = "\"'"; g_hash = 0; g_ci = 0; }
+    else if (streq(ext, ".bas"))                                       { g_kw = VKW_BAS;  g_lc = "'";  g_bo = ""; g_bc = ""; g_bo2 = ""; g_bc2 = ""; g_str = "\""; g_hash = 0; g_ci = 1; }
+    /* C family keeps the defaults: .c .h .cpp .cc .cxx .y .l ... */
+}
+
+int vmatch(char *s, char *pat) { if (pat == 0 || pat[0] == 0) return 0; return strncmp((int)s, (int)pat, strlen(pat)) == 0; }
+int vinset(int c, char *set) { int i = 0; while (set[i]) { if (set[i] == c) return 1; i++; } return 0; }
 
 int vi_iskw(char *s, int from, int to)
 {
     int len = to - from; if (len <= 0 || len > 20) return 0;
-    char w[24]; w[0] = ' '; int k; for (k = 0; k < len; k++) w[k + 1] = s[from + k]; w[len + 1] = ' '; w[len + 2] = 0;
+    char w[24]; w[0] = ' '; int k;
+    for (k = 0; k < len; k++) { int c = s[from + k]; if (g_ci && c >= 'A' && c <= 'Z') c += 32; w[k + 1] = (char)c; }
+    w[len + 1] = ' '; w[len + 2] = 0;
     return strstr((int)g_kw, (int)w) != 0;
 }
 
-/* block-comment state entering line `upto` (scans /* *​/, skipping strings and // ) */
+/* block-comment state entering line `upto` (0 none, 1 first style, 2 second style);
+ * scans the language's block delimiters, skipping strings and line comments. */
 int vi_cmt_state_at(int upto)
 {
     int in = 0, i;
@@ -113,10 +150,11 @@ int vi_cmt_state_at(int upto)
         char *s = vln[i]; int j = 0;
         while (s[j])
         {
-            if (in) { if (s[j] == '*' && s[j + 1] == '/') { in = 0; j += 2; continue; } j++; }
-            else if (s[j] == '/' && s[j + 1] == '/') break;
-            else if (s[j] == '/' && s[j + 1] == '*') { in = 1; j += 2; }
-            else if (s[j] == '"' || s[j] == 39) { int q = s[j]; j++; while (s[j] && s[j] != q) { if (s[j] == '\\' && s[j + 1]) j++; j++; } if (s[j]) j++; }
+            if (in) { char *cl = (in == 2) ? g_bc2 : g_bc; if (vmatch(s + j, cl)) { in = 0; j += strlen(cl); continue; } j++; }
+            else if (vmatch(s + j, g_bo))  { in = 1; j += strlen(g_bo); }
+            else if (vmatch(s + j, g_bo2)) { in = 2; j += strlen(g_bo2); }
+            else if (vmatch(s + j, g_lc)) break;
+            else if (vinset(s[j], g_str)) { int q = s[j]; j++; while (s[j] && s[j] != q) { if (s[j] == '\\' && s[j + 1]) j++; j++; } if (s[j]) j++; }
             else j++;
         }
     }
@@ -132,20 +170,22 @@ void vi_hl_line(char *s, int avail, int *incmt)
 {
     hloi = 0; hlvis = 0; hlavail = avail;
     int i = 0, len = strlen(s);
-    int j = 0; while (s[j] == ' ' || s[j] == '\t') j++;
-    if (!*incmt && s[j] == '#') { hl_e("\x1b[33m"); while (i < len) { hl_c(s[i]); i++; } hl_e("\x1b[0m"); hlbuf[hloi] = 0; vout(hlbuf); return; }
+    if (g_hash && !*incmt) { int j = 0; while (s[j] == ' ' || s[j] == '\t') j++; if (s[j] == '#') { hl_e("\x1b[33m"); while (i < len) { hl_c(s[i]); i++; } hl_e("\x1b[0m"); hlbuf[hloi] = 0; vout(hlbuf); return; } }
     while (i < len)
     {
         if (*incmt)
         {
+            char *cl = (*incmt == 2) ? g_bc2 : g_bc;
             hl_e("\x1b[90m");
-            while (i < len) { if (s[i] == '*' && s[i + 1] == '/') { hl_c('*'); hl_c('/'); i += 2; *incmt = 0; break; } hl_c(s[i]); i++; }
+            while (i < len) { if (vmatch(s + i, cl)) { int n = strlen(cl), t; for (t = 0; t < n; t++) { hl_c(s[i]); i++; } *incmt = 0; break; } hl_c(s[i]); i++; }
             hl_e("\x1b[0m"); continue;
         }
+        /* block-comment opens are checked before the line comment (e.g. Lua --[[ vs --) */
+        if (vmatch(s + i, g_bo))  { hl_e("\x1b[90m"); int n = strlen(g_bo), t;  for (t = 0; t < n; t++) { hl_c(s[i]); i++; } *incmt = 1; continue; }
+        if (vmatch(s + i, g_bo2)) { hl_e("\x1b[90m"); int n = strlen(g_bo2), t; for (t = 0; t < n; t++) { hl_c(s[i]); i++; } *incmt = 2; continue; }
+        if (vmatch(s + i, g_lc))  { hl_e("\x1b[90m"); while (i < len) { hl_c(s[i]); i++; } hl_e("\x1b[0m"); break; }
         int c = s[i];
-        if (c == '/' && s[i + 1] == '/') { hl_e("\x1b[90m"); while (i < len) { hl_c(s[i]); i++; } hl_e("\x1b[0m"); break; }
-        if (c == '/' && s[i + 1] == '*') { hl_e("\x1b[90m"); hl_c('/'); hl_c('*'); i += 2; *incmt = 1; continue; }
-        if (c == '"' || c == 39)
+        if (vinset(c, g_str))
         {
             int q = c; hl_e("\x1b[32m"); hl_c(c); i++;
             while (i < len) { if (s[i] == '\\' && s[i + 1]) { hl_c(s[i]); i++; hl_c(s[i]); i++; continue; } if (s[i] == q) { hl_c(s[i]); i++; break; } hl_c(s[i]); i++; }
@@ -471,9 +511,8 @@ int vi_main(int n, int *argv, int start)
     strcpy(vfile, (char *)argv[start + 1]);
     vnl = 0; vtop = 0; vcy = 0; vcx = 0; vmode = 0; vdirty = 0; vquit = 0;
     vshownum = 0; vcmdlen = 0; vmsg[0] = 0; vynl = 0; vsearch[0] = 0; vpend = 0; vcount = 0; u_sp = 0;
-    vsyntax = 1; g_kw = VKW_C;                          /* highlight on by default; keyword set by extension */
-    char *ext = (char *)strrchr((int)vfile, '.');
-    if (ext) { if (streq(ext, ".pas") || streq(ext, ".pp")) g_kw = VKW_PAS; else if (streq(ext, ".lua")) g_kw = VKW_LUA; }
+    vsyntax = 1;                                        /* highlight on by default */
+    vi_set_lang((char *)strrchr((int)vfile, '.'));      /* comment/string/keyword profile by extension */
     vi_load(vfile);
     sprintf((int)vmsg, (int)"\"%s\" %dL", (int)vfile, vnl);
 
