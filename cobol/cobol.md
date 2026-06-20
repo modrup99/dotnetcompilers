@@ -31,14 +31,20 @@ DATA DIVISION.            WORKING-STORAGE SECTION.
 01 AGE      PIC 9(3) VALUE 30.
    88 IS-ADULT VALUE 18 THRU 120.      *> condition-name (a boolean test)
 PROCEDURE DIVISION.
-    DISPLAY "text" FIELD.       MOVE x TO y.       ACCEPT y.
+    DISPLAY "text" FIELD.       MOVE x TO y.       ACCEPT y.   INITIALIZE y.
+    MOVE ALL "*" TO y.    MOVE HIGH-VALUES TO y.   MOVE SPACES TO y.   y(2:3)  *> ref-mod
     ADD a b TO c [GIVING d].    SUBTRACT a FROM b. MULTIPLY a BY b. DIVIDE a INTO b.
     COMPUTE d = (a + b) * c.
-    IF cond THEN ... ELSE ... END-IF.
+    IF x IS NUMERIC / IS POSITIVE / IS NEGATIVE ...   IF cond THEN ... ELSE ... END-IF.
     EVALUATE n WHEN 1 ... WHEN 2 ... WHEN OTHER ... END-EVALUATE.
-    PERFORM PARA.   PERFORM PARA 5 TIMES.   PERFORM PARA UNTIL cond.
+    PERFORM PARA.   PERFORM A THRU C.   PERFORM PARA 5 TIMES.   PERFORM PARA UNTIL cond.
     PERFORM VARYING i FROM 1 BY 1 UNTIL i > 10 ... END-PERFORM.
-    STOP RUN.
+    SET cond-name TO TRUE.   SET i UP BY 1.   GO TO PARA.   STOP RUN.
+    STRING a DELIMITED BY SPACE b DELIMITED BY SIZE INTO d END-STRING.
+    UNSTRING s DELIMITED BY "," INTO p1 p2 END-UNSTRING.
+    INSPECT s TALLYING n FOR ALL "x".   INSPECT s REPLACING ALL "x" BY "y".
+    CALL "SUBPROG" USING a b c.    GOBACK.    *> subprogram with LINKAGE / USING
+    FUNCTION UPPER-CASE(s)  LOWER-CASE  REVERSE  LENGTH  NUMVAL  MOD  MAX  MIN  INTEGER
 ```
 
 ## Data types
@@ -57,18 +63,24 @@ initial value. An **88-level** under an item is a *condition-name* — a named b
 
 ## Statements / Commands
 
-`DISPLAY`, `ACCEPT`, `MOVE`, the arithmetic verbs (`ADD`, `SUBTRACT`, `MULTIPLY`,
-`DIVIDE`, `COMPUTE`), `IF/ELSE/END-IF`, `EVALUATE`, `PERFORM` (out-of-line, `N TIMES`,
-`UNTIL`, `VARYING`, and inline `… END-PERFORM`), `GO TO`, and `STOP RUN`. A sentence is
-one or more statements ended by a period; block statements use scope terminators
-(`END-IF`, `END-PERFORM`, `END-EVALUATE`).
+`DISPLAY`, `ACCEPT`, `MOVE`, `INITIALIZE`, `SET`, the arithmetic verbs (`ADD`,
+`SUBTRACT`, `MULTIPLY`, `DIVIDE`, `COMPUTE`), `IF/ELSE/END-IF`, `EVALUATE`, `PERFORM`
+(out-of-line, `THRU`, `N TIMES`, `UNTIL`, `VARYING`, and inline `… END-PERFORM`),
+`GO TO`, `CALL … USING`, `GOBACK`/`EXIT PROGRAM`, the string verbs `STRING`/`UNSTRING`/
+`INSPECT`, and `STOP RUN`. A sentence is one or more statements ended by a period; block
+statements use scope terminators (`END-IF`, `END-PERFORM`, `END-EVALUATE`).
 
 ## Functions
 
-COBOL's unit of code is the **paragraph**, not the function. A paragraph is a name
-followed by sentences; `PERFORM` runs it (and returns). Each paragraph compiles to a
-`public static void` method `pg_<name>` on `CProgram`, which is what makes a compiled
-COBOL program callable from C#/VB.NET (Activity 9).
+COBOL has two units of code. A **paragraph** is a name followed by sentences; `PERFORM`
+runs it and returns (`PERFORM A THRU C` runs a range). A **subprogram** is a separate
+program with a `LINKAGE SECTION` and `PROCEDURE DIVISION USING …`, invoked with
+`CALL "NAME" USING args` and returning via `GOBACK`/`EXIT PROGRAM`; its arguments are
+passed **by reference**, so the caller sees updates. Multiple programs can live in one
+file, each ended by `END PROGRAM name`. Each paragraph compiles to a `public static
+void` method on `CProgram`, which is what makes a compiled COBOL program callable from
+C#/VB.NET (Activity 9). Built-in intrinsics: `FUNCTION UPPER-CASE / LOWER-CASE / REVERSE
+/ LENGTH / NUMVAL / INTEGER / MOD / MAX / MIN`.
 
 ## Input / Output
 
@@ -97,10 +109,12 @@ to format a money report — COBOL's native idea of drawing.
 
 A substantial core, not the whole language. Not included: fixed (columnar) format; the
 ENVIRONMENT DIVISION beyond a header; file I/O (`SELECT`/`FD`/`READ`/`WRITE`); the
-report writer; `STRING`/`UNSTRING`; `INSPECT`; reference modification (`x(1:3)`);
-`COPY` copybooks; `REDEFINES`; group-level moves; called sub-programs with a `LINKAGE
-SECTION` / `PROCEDURE DIVISION USING` (so interop drives parameterless paragraphs);
-and `PERFORM THRU`.
+report writer; `COPY` copybooks; `REDEFINES`; group-level moves (each elementary item is
+an independent variable). Reference modification (`x(start:len)`) is supported as a
+*source* (read), not yet as an assignment target. `INSPECT … LEADING` is treated like
+`ALL`. C#/VB.NET interop drives paragraph entry points (and `STOP RUN`/`DISPLAY` work
+from them); the `CALL … USING` mechanism (by-reference parameters) is for COBOL-to-COBOL
+calls within the run unit.
 
 ---
 
@@ -218,7 +232,43 @@ Total is 0015
 
 `PERFORM ADD-PARA VARYING …` runs `ADD-PARA` once per value of `I`. `MAIN-PARA` ends in
 `STOP RUN`, so control never falls into `ADD-PARA` on its own — exactly COBOL's
-fall-through-unless-halted model.
+fall-through-unless-halted model. `PERFORM A THRU C` runs a *range* of paragraphs.
+
+For reusable code with parameters, COBOL uses a **subprogram** — a separate program with
+a `LINKAGE SECTION` and `PROCEDURE DIVISION USING`, called with `CALL` (arguments by
+reference) and returning with `GOBACK`. Multiple programs share one file, each ended by
+`END PROGRAM`:
+
+```cobol
+       PROGRAM-ID. MAINPROG.
+       ...
+           CALL "ADDER" USING A B RESULT.
+           DISPLAY "Result is " RESULT.
+           STOP RUN.
+       END PROGRAM MAINPROG.
+
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ADDER.
+       DATA DIVISION.
+       LINKAGE SECTION.
+       01 X PIC 9(4).
+       01 Y PIC 9(4).
+       01 Z PIC 9(6).
+       PROCEDURE DIVISION USING X Y Z.
+           COMPUTE Z = X + Y.
+           GOBACK.
+       END PROGRAM ADDER.
+```
+
+With `A=7, B=5`:
+
+```
+Calling ADDER with 0007 and 0005
+Result is 000012
+```
+
+`ADDER` writes its result back through `Z`, which is bound by reference to the caller's
+`RESULT` — the defining behaviour of a COBOL subprogram.
 
 ### 6. Memory management
 
@@ -249,7 +299,32 @@ adult
 ```
 
 `IS-ADULT` reads as a boolean but is really the test `AGE >= 18 AND AGE <= 120` —
-COBOL's way of naming a condition.
+COBOL's way of naming a condition. `SET IS-ADULT TO TRUE` assigns the underlying value.
+
+COBOL's string verbs build and take apart fixed-width fields. `STRING` concatenates
+(with `DELIMITED BY SPACE` to trim padding), `UNSTRING` splits on a delimiter,
+`INSPECT` counts/replaces, reference modification `field(start:len)` takes a substring,
+and `MOVE ALL "*"` fills:
+
+```cobol
+STRING FIRST-N DELIMITED BY SPACE " " DELIMITED BY SIZE LAST-N DELIMITED BY SPACE
+    INTO FULL-N END-STRING.
+DISPLAY "Full: [" FULL-N "]".
+UNSTRING CSV DELIMITED BY "," INTO PART1 PART2 END-UNSTRING.
+MOVE FULL-N(1:4) TO SUB.
+INSPECT TXT TALLYING CNT FOR ALL "S".
+INSPECT TXT REPLACING ALL "S" BY "*".
+DISPLAY "Upper: " FUNCTION UPPER-CASE("hello world").
+```
+
+```
+Full: [JOHN SMITH]
+Part1: [alpha     ] Part2: [beta      ]
+Upper: HELLO WORLD
+```
+
+(with `CSV = "alpha,beta"`, `TXT = "MISSISSIPPI"` → `CNT` becomes 4 and `TXT` becomes
+`MI**I**IPPI`.)
 
 ### 8. Drawing a picture — a formatted report
 
