@@ -21,18 +21,20 @@ catch (CCompileException ex)
 }
 
 static void Usage(TextWriter w) => w.WriteLine(
-    "usage: cc <input.c> [-o <output>] [--exe|--dll] [-I <dir>...] [-L <dir>...] [-l <name>...]\n" +
+    "usage: cc <input.c> [-o <output>] [--exe|--dll] [-I <dir>...] [-L <dir>...] [-l <name>...] [--icon <file>]\n" +
     "  -o <output>   output path (default: input with .dll)\n" +
     "  --exe|--dll   produce an executable (default) or a class library\n" +
     "  -I <dir>      add a directory to the #include search path (repeatable; also -I<dir>)\n" +
     "  -L <dir>      add a directory to the library search path (repeatable; also -L<dir>)\n" +
     "  -l <name>     stage <name>.dll (found via -L) beside the output (repeatable; also -l<name>)\n" +
+    "  --icon <file> set the .exe icon from a .png/.ico/.bmp (default: the toolchain icon)\n" +
+    "  --noicon      do not set any icon on the .exe\n" +
     "  -h, --help    show this help");
 
 static int Run(string[] args)
 {
-    string? input = null, output = null;
-    bool asExe = true;
+    string? input = null, output = null, iconPath = null;
+    bool asExe = true, noIcon = false;
     var includeDirs = new List<string>();
     var libDirs = new List<string>();
     var libNames = new List<string>();
@@ -49,6 +51,8 @@ static int Run(string[] args)
             case "-I": if (++i >= args.Length) throw new CCompileException("-I requires a directory"); includeDirs.Add(args[i]); break;
             case "-L": if (++i >= args.Length) throw new CCompileException("-L requires a directory"); libDirs.Add(args[i]); break;
             case "-l": if (++i >= args.Length) throw new CCompileException("-l requires a name"); libNames.Add(args[i]); break;
+            case "--icon": if (++i >= args.Length) throw new CCompileException("--icon requires a file"); iconPath = args[i]; break;
+            case "--noicon": noIcon = true; break;
             default:
                 if (a.StartsWith("-I")) includeDirs.Add(a.Substring(2));
                 else if (a.StartsWith("-L")) libDirs.Add(a.Substring(2));
@@ -87,6 +91,15 @@ static int Run(string[] args)
     {
         WriteRuntimeConfig(managed);
         string exe = WriteAppHost(managed);
+        if (exe != null && !noIcon)
+        {
+            string icon = iconPath ?? Path.Combine(FindRepo(), "icons", "default.png");
+            if (File.Exists(icon))
+            {
+                if (!IconEmbedder.TryEmbed(exe, icon, out var err)) Console.Error.WriteLine($"cc: icon not embedded ({err})");
+            }
+            else if (iconPath != null) Console.Error.WriteLine($"cc: icon not found: {iconPath}");
+        }
         Console.WriteLine($"compiled {input} -> {managed}{(exe != null ? " + " + exe : "")} (executable)");
     }
     else Console.WriteLine($"compiled {input} -> {managed} (library)");
@@ -150,6 +163,19 @@ static string? FindAppHostTemplate()
 }
 
 // The emitted assembly references CRuntime; place it alongside the output.
+// walk up from the compiler's location to the repo root (folder with build_all.sh),
+// where the toolchain's icons\ live; falls back to the current directory.
+static string FindRepo()
+{
+    string? d = AppContext.BaseDirectory;
+    for (int i = 0; i < 12 && !string.IsNullOrEmpty(d); i++)
+    {
+        if (File.Exists(Path.Combine(d, "build_all.sh"))) return d;
+        d = Path.GetDirectoryName(d.TrimEnd('\\', '/'));
+    }
+    return Directory.GetCurrentDirectory();
+}
+
 static void CopyRuntime(string outputPath, List<string>? libDirs = null)
 {
     string src = Path.Combine(AppContext.BaseDirectory, "CRuntime.dll");

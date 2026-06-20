@@ -352,7 +352,8 @@ int main(int argc, char **argv)
     int f = fopen((int)cpath, (int)"w"); fputs((int)PRELUDE, f); fputs((int)g_out, f); fclose(f);
     char cc[1100]; char *repo = (char *)rt_repo();
     sprintf((int)cc, (int)"%s\\src\\Cc\\bin\\Release\\net10.0\\cc.exe", (int)repo);
-    int av[8]; int n = 0; av[n++] = (int)cc; av[n++] = (int)cpath; av[n++] = (int)"-o"; av[n++] = (int)outp; av[n++] = dll ? (int)"--dll" : (int)"--exe";
+    int av[8]; char icon[1100]; int n = 0; sprintf((int)icon, (int)"%s\\icons\\fortran.png", (int)repo);
+    av[n++] = (int)cc; av[n++] = (int)cpath; av[n++] = (int)"-o"; av[n++] = (int)outp; av[n++] = dll ? (int)"--dll" : (int)"--exe"; av[n++] = (int)"--icon"; av[n++] = (int)icon;
     int rc = sh_run((int)av, n);
     if (rc == 0) printf((int)"fortran: %s -> %s\n", (int)in, (int)outp);
     else printf((int)"fortran: cc failed (%d)\n", rc);

@@ -608,8 +608,9 @@ int main(int argc, char **argv)
     fclose(out);
     char cc[1100]; char *repo = (char *)rt_repo();
     sprintf((int)cc, (int)"%s\\src\\Cc\\bin\\Release\\net10.0\\cc.exe", (int)repo);
-    int av[8]; av[0] = (int)cc; av[1] = (int)cpath; av[2] = (int)"-o"; av[3] = (int)outexe; av[4] = (int)"--exe";
-    int rc = sh_run((int)av, 5);
+    int av[8]; char icon[1100]; sprintf((int)icon, (int)"%s\\icons\\oberon.png", (int)repo);
+    av[0] = (int)cc; av[1] = (int)cpath; av[2] = (int)"-o"; av[3] = (int)outexe; av[4] = (int)"--exe"; av[5] = (int)"--icon"; av[6] = (int)icon;
+    int rc = sh_run((int)av, 7);
     if (rc == 0) printf((int)"oberon: %s -> %s\n", (int)in, (int)outexe);
     else printf((int)"oberon: cc failed (%d)\n", rc);
     return rc;

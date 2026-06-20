@@ -48,6 +48,7 @@ StageDir  "src\Cc\bin\Release\net10.0"
 StageDir  "src\ilshell\bin\Release\net10.0"
 StageDir  "src\ilterm\bin\Release\net10.0"
 StageDir  "src\ilgfx\bin\Release\net10.0"
+StageDir  "icons"                                  # default + per-language exe icons (cc embeds these)
 
 # language reference docs (so `man <lang>` works) + sample config
 Get-ChildItem $repo -Directory | Where-Object { $_.Name -notin @("dist","installer","src",".git") } | ForEach-Object {

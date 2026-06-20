@@ -33,89 +33,89 @@ echo "[6/8] building the Pascal compiler (pascal.l + pascal.y -> our C -> IL) ..
 dotnet yacc/yacc.dll < pascal/pascal.y > out/pas_parse.c
 dotnet lex/lex.dll   < pascal/pascal.l > out/pas_scan.c
 cat out/pas_parse.c out/pas_scan.c > out/pascal_src.c
-$CC out/pascal_src.c -o out/pascal.exe --exe
+$CC out/pascal_src.c -o out/pascal.exe --exe --icon icons/pascal.png
 
 echo "[7/9] building the Modula-2/Oberon-2 compiler (oberon.l + oberon.y -> our C -> IL) ..."
 dotnet yacc/yacc.dll < oberon/oberon.y > out/ob_parse.c
 dotnet lex/lex.dll   < oberon/oberon.l > out/ob_scan.c
 cat out/ob_parse.c out/ob_scan.c > out/oberon_src.c
-$CC out/oberon_src.c -o out/oberon.exe --exe
+$CC out/oberon_src.c -o out/oberon.exe --exe --icon icons/oberon.png
 
 echo "[8/10] building the Tiny C++ compiler (cpp.l + cpp.y -> our C -> IL) ..."
 dotnet yacc/yacc.dll < cpp/cpp.y > out/cpp_parse.c
 dotnet lex/lex.dll   < cpp/cpp.l > out/cpp_scan.c
 cat out/cpp_parse.c out/cpp_scan.c > out/tcpp_src.c
-$CC out/tcpp_src.c -o out/tcpp.exe --exe
+$CC out/tcpp_src.c -o out/tcpp.exe --exe --icon icons/tcpp.png
 
 echo "[9/11] building the QBasic compiler (qbasic.l + qbasic.y -> our C -> IL) ..."
 dotnet yacc/yacc.dll < qbasic/qbasic.y > out/qb_parse.c
 dotnet lex/lex.dll   < qbasic/qbasic.l > out/qb_scan.c
 cat out/qb_parse.c out/qb_scan.c > out/qbasic_src.c
-$CC out/qbasic_src.c -o out/qbasic.exe --exe
+$CC out/qbasic_src.c -o out/qbasic.exe --exe --icon icons/qbasic.png
 
 echo "[10/12] building the Forth compiler (forth.l + forth.y -> our C -> IL) ..."
 dotnet yacc/yacc.dll < forth/forth.y > out/forth_parse.c
 dotnet lex/lex.dll   < forth/forth.l > out/forth_scan.c
 cat out/forth_parse.c out/forth_scan.c > out/forth_src.c
-$CC out/forth_src.c -o out/forth.exe --exe
+$CC out/forth_src.c -o out/forth.exe --exe --icon icons/forth.png
 
 echo "[11/13] building the Logo interpreter (logo.c -> our C -> IL; no lex/yacc, arity-directed) ..."
-$CC logo/logo.c -o out/logo.exe --exe
+$CC logo/logo.c -o out/logo.exe --exe --icon icons/logo.png
 
 echo "[12/14] building the Lisp interpreter (lisp.c -> our C -> IL; cons/closures/metacircular) ..."
-$CC lisp/lisp.c -o out/lisp.exe --exe
+$CC lisp/lisp.c -o out/lisp.exe --exe --icon icons/lisp.png
 
 echo "[13/15] building the Prolog interpreter (prolog.c -> our C -> IL; unification+backtracking+cut) ..."
-$CC prolog/prolog.c -o out/prolog.exe --exe
+$CC prolog/prolog.c -o out/prolog.exe --exe --icon icons/prolog.png
 
 echo "[14/16] building bc, the scientific calculator (bc.l + bc.y -> our C -> IL) ..."
 dotnet yacc/yacc.dll < bc/bc.y > out/bc_parse.c
 dotnet lex/lex.dll   < bc/bc.l > out/bc_scan.c
 cat out/bc_parse.c out/bc_scan.c > out/bc_src.c
-$CC out/bc_src.c -o out/bc.exe --exe
+$CC out/bc_src.c -o out/bc.exe --exe --icon icons/bc.png
 
 echo "[15/16] building Coil (lex+yacc front end -> stack-IL IR; C# coilasm -> real .NET IL) ..."
 dotnet build src/CoilAsm -c Release -v q
 dotnet yacc/yacc.dll < coil/coil.y > out/coil_parse.c
 dotnet lex/lex.dll   < coil/coil.l > out/coil_scan.c
 cat out/coil_parse.c out/coil_scan.c > out/coil_src.c
-$CC out/coil_src.c -o out/coilfe.exe --exe
+$CC out/coil_src.c -o out/coilfe.exe --exe --icon icons/coil.png
 
 echo "[16/17] building the Fortran 90 compiler (fortran.l + fortran.y -> our C -> IL; C#/VB interop) ..."
 dotnet yacc/yacc.dll < fortran/fortran.y > out/f90_parse.c
 dotnet lex/lex.dll   < fortran/fortran.l > out/f90_scan.c
 cat out/f90_parse.c out/f90_scan.c > out/fortran_src.c
-$CC out/fortran_src.c -o out/fortran.exe --exe
+$CC out/fortran_src.c -o out/fortran.exe --exe --icon icons/fortran.png
 
 echo "[17/18] building the COBOL compiler (cobol.l + cobol.y -> our C -> IL; free-format; C#/VB interop) ..."
 dotnet yacc/yacc.dll < cobol/cobol.y > out/cob_parse.c
 dotnet lex/lex.dll   < cobol/cobol.l > out/cob_scan.c
 cat out/cob_parse.c out/cob_scan.c > out/cobol_src.c
-$CC out/cobol_src.c -o out/cobol.exe --exe
+$CC out/cobol_src.c -o out/cobol.exe --exe --icon icons/cobol.png
 
 echo "[18/20] building the Ada compiler (ada.l + ada.y -> our C -> IL; C#/VB interop) ..."
 dotnet yacc/yacc.dll < ada/ada.y > out/ada_parse.c
 dotnet lex/lex.dll   < ada/ada.l > out/ada_scan.c
 cat out/ada_parse.c out/ada_scan.c > out/ada_src.c
-$CC out/ada_src.c -o out/ada.exe --exe
+$CC out/ada_src.c -o out/ada.exe --exe --icon icons/ada.png
 
 echo "[19/21] building the Smalltalk compiler (smalltalk.l + smalltalk.y -> our C -> IL; C#/VB interop) ..."
 dotnet yacc/yacc.dll < smalltalk/smalltalk.y > out/st_parse.c
 dotnet lex/lex.dll   < smalltalk/smalltalk.l > out/st_scan.c
 cat out/st_parse.c out/st_scan.c > out/st_src.c
-$CC out/st_src.c -o out/smalltalk.exe --exe
+$CC out/st_src.c -o out/smalltalk.exe --exe --icon icons/smalltalk.png
 
 echo "[20/22] building the Lua compiler (lua.l + lua.y -> our C -> IL; C#/VB interop) ..."
 dotnet yacc/yacc.dll < lua/lua.y > out/lua_parse.c
 dotnet lex/lex.dll   < lua/lua.l > out/lua_scan.c
 cat out/lua_parse.c out/lua_scan.c > out/lua_src.c
-$CC out/lua_src.c -o out/lua.exe --exe
+$CC out/lua_src.c -o out/lua.exe --exe --icon icons/lua.png
 
 echo "[21/22] building the AWK compiler (awk.l + awk.y -> our C -> IL; C#/VB interop) ..."
 dotnet yacc/yacc.dll < awk/awk.y > out/awk_parse.c
 dotnet lex/lex.dll   < awk/awk.l > out/awk_scan.c
 cat out/awk_parse.c out/awk_scan.c > out/awk_src.c
-$CC out/awk_src.c -o out/awk.exe --exe
+$CC out/awk_src.c -o out/awk.exe --exe --icon icons/awk.png
 
 echo "[22/22] done. Tools & launchers:"
 echo "   ilsh.bat    - interactive shell in a console"
