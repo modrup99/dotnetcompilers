@@ -1,13 +1,19 @@
 # install.ps1 — install the dotnetcompilers toolchain for the current user and put the
 # shell on the Start Menu.  Run this from inside the unzipped package:
 #
-#   powershell -ExecutionPolicy Bypass -File install.ps1 [-Dest <dir>]
+#   powershell -ExecutionPolicy Bypass -File install.ps1 [-Dest <dir>] [-HomeDir <dir>]
 #
-# Default destination: %LOCALAPPDATA%\Programs\ildev
+#   -Dest      where the toolchain is installed (default %LOCALAPPDATA%\Programs\ildev)
+#   -HomeDir   the shell's home directory (default <Dest>\home). May be any path; it
+#              persists independently of the install and is never overwritten.
 
-param([string]$Dest = "$env:LOCALAPPDATA\Programs\ildev")
+param(
+    [string]$Dest = "$env:LOCALAPPDATA\Programs\ildev",
+    [string]$HomeDir = ""
+)
 $ErrorActionPreference = "Stop"
 $src = $PSScriptRoot
+if (-not $HomeDir) { $HomeDir = Join-Path $Dest "home" }
 
 # .NET 10 runtime is required to run the toolchain (SDK only needed to compile new exes).
 $rt = & dotnet --list-runtimes 2>$null
@@ -23,20 +29,20 @@ New-Item -ItemType Directory -Force $Dest | Out-Null
 Get-ChildItem $src -Force | Where-Object { $_.Name -notin @("install.ps1", "uninstall.ps1", "home") } |
     ForEach-Object { Copy-Item $_.FullName -Destination $Dest -Recurse -Force }
 
-# ----- persistent home directory -----
-$homeDir = Join-Path $Dest "home"
-$seeded = -not (Test-Path $homeDir)
-if ($seeded) {
-    if (Test-Path (Join-Path $src "home")) { Copy-Item (Join-Path $src "home") $Dest -Recurse -Force }
-    else { New-Item -ItemType Directory -Force $homeDir | Out-Null }
-    Write-Host "Seeded home directory: $homeDir"
-} else {
-    Write-Host "Kept existing home directory: $homeDir"
+# ----- persistent home directory (may live anywhere; never overwritten) -----
+if (-not (Test-Path $HomeDir)) { New-Item -ItemType Directory -Force $HomeDir | Out-Null; Write-Host "Created home directory: $HomeDir" }
+else { Write-Host "Using existing home directory: $HomeDir" }
+# seed default files (.quicklaunch etc.) only where they're missing -- never clobber the user's
+if (Test-Path (Join-Path $src "home")) {
+    Get-ChildItem (Join-Path $src "home") -Force | ForEach-Object {
+        $t = Join-Path $HomeDir $_.Name
+        if (-not (Test-Path $t)) { Copy-Item $_.FullName $t -Recurse -Force; Write-Host "Seeded $($_.Name)" }
+    }
 }
 
 # generate .ilshellrc with the installed directory layout, but only if it doesn't exist yet
 # (so the user's edits persist across reinstalls).
-$rc = Join-Path $homeDir ".ilshellrc"
+$rc = Join-Path $HomeDir ".ilshellrc"
 if (-not (Test-Path $rc)) {
     $profile = [Environment]::GetFolderPath("UserProfile")
     @"
@@ -61,18 +67,18 @@ echo "IL Shell ready.  'vfs status' shows the layout; 'refresh' reloads this fil
 }
 else {
     # A kept .ilshellrc may have been written for a different install location (e.g. the
-    # folder was moved). Rebase the installer-managed mount lines (home/bin/lib/include/
-    # etc/tmp) to this install dir, preserving aliases and every other edit. No-op if the
-    # paths already match.
+    # toolchain was reinstalled elsewhere). Rebase the install-relative mount lines
+    # (bin/lib/include/etc/tmp) to this install dir, preserving home (independent), aliases,
+    # and every other edit. The old install dir is read from the bin= line. No-op if matched.
     $lines = @(Get-Content $rc)
     $oldInstall = $null
-    foreach ($l in $lines) { if ($l -match '^\s*home\s*=\s*(.+?)\s*$') { $oldInstall = (Split-Path $matches[1] -Parent); break } }
+    foreach ($l in $lines) { if ($l -match '^\s*bin\s*=\s*(.+?)\s*$') { $oldInstall = (Split-Path $matches[1] -Parent); break } }
     if ($oldInstall) {
         $oldp = $oldInstall.TrimEnd('\'); $newp = $Dest.TrimEnd('\')
         if (-not $oldp.Equals($newp, [System.StringComparison]::OrdinalIgnoreCase)) {
             $changed = $false
             for ($i = 0; $i -lt $lines.Count; $i++) {
-                if ($lines[$i] -match '^\s*(home|bin|lib|include|etc|tmp)\s*=\s*(.+?)\s*$') {
+                if ($lines[$i] -match '^\s*(bin|lib|include|etc|tmp)\s*=\s*(.+?)\s*$') {
                     $key = $matches[1]; $val = $matches[2]
                     if ($val.StartsWith($oldp, [System.StringComparison]::OrdinalIgnoreCase)) {
                         $lines[$i] = "$key=$newp" + $val.Substring($oldp.Length); $changed = $true

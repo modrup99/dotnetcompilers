@@ -30,6 +30,17 @@ It copies the toolchain to `%LOCALAPPDATA%\Programs\ildev` (override with `-Dest
 **IL Shell** (the windowed terminal) and **IL Shell (console)** to the Start Menu. Search
 the Start Menu for "IL Shell" to launch. Remove it with `uninstall.ps1`.
 
+The shell's **home directory** defaults to `<Dest>\home`; put it anywhere with `-HomeDir`:
+
+```
+powershell -ExecutionPolicy Bypass -File install.ps1 -HomeDir C:\devwork\ilwork
+```
+
+The home persists independently of the install (never overwritten), holds your `.ilshellrc`
+and `.quicklaunch`, and the shortcuts launch the shell there with the virtual filesystem on.
+If you later reinstall the toolchain elsewhere, the install-relative mounts in `.ilshellrc`
+are rebased to the new location automatically while your edits are kept.
+
 **Inno Setup installer** (a polished `Setup.exe` with an uninstaller in
 Add/Remove Programs). Needs [Inno Setup](https://jrsoftware.org/isdl.php):
 
