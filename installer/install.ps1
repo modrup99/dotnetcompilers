@@ -59,6 +59,33 @@ echo "IL Shell ready.  'vfs status' shows the layout; 'refresh' reloads this fil
 "@ | Set-Content -Path $rc -Encoding ASCII
     Write-Host "Wrote $rc"
 }
+else {
+    # A kept .ilshellrc may have been written for a different install location (e.g. the
+    # folder was moved). Rebase the installer-managed mount lines (home/bin/lib/include/
+    # etc/tmp) to this install dir, preserving aliases and every other edit. No-op if the
+    # paths already match.
+    $lines = @(Get-Content $rc)
+    $oldInstall = $null
+    foreach ($l in $lines) { if ($l -match '^\s*home\s*=\s*(.+?)\s*$') { $oldInstall = (Split-Path $matches[1] -Parent); break } }
+    if ($oldInstall) {
+        $oldp = $oldInstall.TrimEnd('\'); $newp = $Dest.TrimEnd('\')
+        if (-not $oldp.Equals($newp, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $changed = $false
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+                if ($lines[$i] -match '^\s*(home|bin|lib|include|etc|tmp)\s*=\s*(.+?)\s*$') {
+                    $key = $matches[1]; $val = $matches[2]
+                    if ($val.StartsWith($oldp, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $lines[$i] = "$key=$newp" + $val.Substring($oldp.Length); $changed = $true
+                    }
+                }
+            }
+            if ($changed) {
+                Set-Content -Path $rc -Value $lines -Encoding ASCII
+                Write-Host "Rebased .ilshellrc mount paths ($oldInstall -> $Dest); your aliases were kept."
+            }
+        }
+    }
+}
 
 $ilterm = Join-Path $Dest "src\ilterm\bin\Release\net10.0\ilterm.exe"
 $ilshDll = Join-Path $Dest "out\ilsh.dll"
