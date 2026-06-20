@@ -271,6 +271,9 @@ int main(int argc, char **argv)
     g_w = 600; g_h = 600;
     int i;
     for (i = 1; i < argc; i++)
+        if (strcmp((char *)argv[i], "-h") == 0 || strcmp((char *)argv[i], "--help") == 0)
+        { printf((int)"usage: logo [file.logo] [-svg|-png|-gif out]   turtle graphics; no file = interactive REPL\n"); return 0; }
+    for (i = 1; i < argc; i++)
     {
         char *a = (char *)argv[i];
         if (strcmp(a, "-svg") == 0 && i + 1 < argc) { mode = 1; outpath = (char *)argv[++i]; }

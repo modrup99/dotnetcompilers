@@ -108,6 +108,9 @@ int main(int argc, char **argv)
     setvar("pi", 3.14159265358979);
     setvar("e", 2.71828182845905);
 
+    if (argc > 1 && (strcmp((char *)argv[1], "-h") == 0 || strcmp((char *)argv[1], "--help") == 0))
+    { printf((int)"usage: bc [\"EXPR\"]   scientific calculator; with no args, an interactive REPL (q/quit to exit)\n"); return 0; }
+
     if (argc > 1)
     {
         char buf[8192]; buf[0] = 0; int i;

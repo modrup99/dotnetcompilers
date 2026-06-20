@@ -316,6 +316,9 @@ int main(int argc, char **argv)
     eval_all(PRELUDE);
 
     char *infile = 0; int i;
+    for (i = 1; i < argc; i++)
+        if (strcmp((char *)argv[i], "-h") == 0 || strcmp((char *)argv[i], "--help") == 0)
+        { printf((int)"usage: lisp [file.lisp]   Lisp interpreter; with no file, an interactive REPL\n"); return 0; }
     for (i = 1; i < argc; i++) if (((char *)argv[i])[0] != '-') infile = (char *)argv[i];
 
     if (infile)

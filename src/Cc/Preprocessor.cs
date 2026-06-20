@@ -13,8 +13,13 @@ public sealed class Preprocessor
 
     private readonly Dictionary<string, Macro> _macros = new();
     private readonly string _baseDir;
+    private readonly List<string> _includeDirs;
 
-    public Preprocessor(string baseDir) => _baseDir = baseDir;
+    public Preprocessor(string baseDir, IEnumerable<string>? includeDirs = null)
+    {
+        _baseDir = baseDir;
+        _includeDirs = includeDirs is null ? new List<string>() : new List<string>(includeDirs);
+    }
 
     public string Process(string src)
     {
@@ -116,8 +121,12 @@ public sealed class Preprocessor
         int end = rest.IndexOf(close, 1);
         if (end < 0) return;
         string name = rest.Substring(1, end - 1);
-        string path = Path.Combine(_baseDir, name);
-        if (!File.Exists(path)) return;            // missing/system headers: no-op (libc is built in)
+        // search the base directory first, then each -I directory in order
+        string? path = null;
+        string cand = Path.Combine(_baseDir, name);
+        if (File.Exists(cand)) path = cand;
+        else foreach (var d in _includeDirs) { string c = Path.Combine(d, name); if (File.Exists(c)) { path = c; break; } }
+        if (path is null) return;                  // missing/system headers: no-op (libc is built in)
         Run(JoinContinuations(StripComments(File.ReadAllText(path))), sb, cond);
     }
 

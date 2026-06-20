@@ -20,31 +20,48 @@ catch (CCompileException ex)
     return 1;
 }
 
+static void Usage(TextWriter w) => w.WriteLine(
+    "usage: cc <input.c> [-o <output>] [--exe|--dll] [-I <dir>...] [-L <dir>...] [-l <name>...]\n" +
+    "  -o <output>   output path (default: input with .dll)\n" +
+    "  --exe|--dll   produce an executable (default) or a class library\n" +
+    "  -I <dir>      add a directory to the #include search path (repeatable; also -I<dir>)\n" +
+    "  -L <dir>      add a directory to the library search path (repeatable; also -L<dir>)\n" +
+    "  -l <name>     stage <name>.dll (found via -L) beside the output (repeatable; also -l<name>)\n" +
+    "  -h, --help    show this help");
+
 static int Run(string[] args)
 {
     string? input = null, output = null;
     bool asExe = true;
+    var includeDirs = new List<string>();
+    var libDirs = new List<string>();
+    var libNames = new List<string>();
 
     for (int i = 0; i < args.Length; i++)
     {
-        switch (args[i])
+        string a = args[i];
+        switch (a)
         {
             case "--exe": asExe = true; break;
             case "--dll": asExe = false; break;
-            case "-o":
-                if (++i >= args.Length) throw new CCompileException("-o requires a path");
-                output = args[i];
-                break;
+            case "-h": case "--help": Usage(Console.Out); return 0;
+            case "-o": if (++i >= args.Length) throw new CCompileException("-o requires a path"); output = args[i]; break;
+            case "-I": if (++i >= args.Length) throw new CCompileException("-I requires a directory"); includeDirs.Add(args[i]); break;
+            case "-L": if (++i >= args.Length) throw new CCompileException("-L requires a directory"); libDirs.Add(args[i]); break;
+            case "-l": if (++i >= args.Length) throw new CCompileException("-l requires a name"); libNames.Add(args[i]); break;
             default:
-                if (args[i].StartsWith('-')) throw new CCompileException($"unknown option '{args[i]}'");
-                input = args[i];
+                if (a.StartsWith("-I")) includeDirs.Add(a.Substring(2));
+                else if (a.StartsWith("-L")) libDirs.Add(a.Substring(2));
+                else if (a.StartsWith("-l")) libNames.Add(a.Substring(2));
+                else if (a.StartsWith('-')) throw new CCompileException($"unknown option '{a}'");
+                else input = a;
                 break;
         }
     }
 
     if (input is null)
     {
-        Console.Error.WriteLine("usage: cc <input.c> [-o <output>] [--exe|--dll]");
+        Usage(Console.Error);
         return 2;
     }
 
@@ -58,13 +75,14 @@ static int Run(string[] args)
     string asmName = Path.GetFileNameWithoutExtension(managed);
 
     string baseDir = Path.GetDirectoryName(Path.GetFullPath(input)) ?? ".";
-    source = new Preprocessor(baseDir).Process(source);
+    source = new Preprocessor(baseDir, includeDirs).Process(source);
     var lexer = new Lexer(source, Path.GetFullPath(input));
     var tokens = lexer.Tokenize();
     var unit = new Parser(tokens).Parse();
     new Emitter(unit, asmName, lexer.Documents).Emit(managed, asExe);
 
-    CopyRuntime(managed);
+    CopyRuntime(managed, libDirs);
+    StageLibs(managed, libDirs, libNames);
     if (asExe)
     {
         WriteRuntimeConfig(managed);
@@ -132,15 +150,34 @@ static string? FindAppHostTemplate()
 }
 
 // The emitted assembly references CRuntime; place it alongside the output.
-static void CopyRuntime(string outputPath)
+static void CopyRuntime(string outputPath, List<string>? libDirs = null)
 {
     string src = Path.Combine(AppContext.BaseDirectory, "CRuntime.dll");
+    if (!File.Exists(src) && libDirs != null)                       // -L can supply CRuntime.dll
+        foreach (var d in libDirs) { string c = Path.Combine(d, "CRuntime.dll"); if (File.Exists(c)) { src = c; break; } }
     string dst = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath)) ?? ".", "CRuntime.dll");
     if (!File.Exists(src) || Path.GetFullPath(src) == Path.GetFullPath(dst)) return;
     // The destination may be locked because a running tool (e.g. our pascal.exe,
     // which lives in the output dir) has it loaded; the existing copy is fine.
     try { File.Copy(src, dst, overwrite: true); }
     catch (IOException) { }
+}
+
+// -l <name> stages <name>.dll, located via the -L search paths, next to the output.
+static void StageLibs(string outputPath, List<string> libDirs, List<string> libNames)
+{
+    if (libNames.Count == 0) return;
+    string outDir = Path.GetDirectoryName(Path.GetFullPath(outputPath)) ?? ".";
+    foreach (var name in libNames)
+    {
+        string file = name.EndsWith(".dll") ? name : name + ".dll";
+        string? found = null;
+        foreach (var d in libDirs) { string c = Path.Combine(d, file); if (File.Exists(c)) { found = c; break; } }
+        if (found is null) { Console.Error.WriteLine($"cc: -l {name}: {file} not found in any -L directory"); continue; }
+        string dst = Path.Combine(outDir, Path.GetFileName(found));
+        if (Path.GetFullPath(found) == Path.GetFullPath(dst)) continue;
+        try { File.Copy(found, dst, overwrite: true); } catch (IOException) { }
+    }
 }
 
 static void WriteRuntimeConfig(string assemblyPath)
