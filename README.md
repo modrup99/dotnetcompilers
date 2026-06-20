@@ -301,6 +301,8 @@ framework (every example verified against the real tool); rendered PDFs live in
 | Forth | compiler (lex+yacc) | words → methods, stack = .NET `Stack<object>` | [md](forth/forth.md) · [pdf](docs/pdf/Forth.pdf) |
 | Fortran 90 | compiler (lex+yacc) | free-form, by-ref subroutines, arrays, intrinsics, C# interop | [md](fortran/fortran.md) · [pdf](docs/pdf/Fortran90.pdf) |
 | COBOL | compiler (lex+yacc) | 4 divisions, `PIC`/edited fields, `OCCURS`/88-levels, `PERFORM`/`EVALUATE` | [md](cobol/cobol.md) · [pdf](docs/pdf/COBOL.pdf) |
+| Ada | compiler (lex+yacc) | strong typing, enums, arrays, `in`/`out` params, `'Image`, C# interop | [md](ada/ada.md) · [pdf](docs/pdf/Ada.pdf) |
+| Smalltalk | compiler (lex+yacc) | everything-is-an-object, message dispatch, classes/methods, C# interop | [md](smalltalk/smalltalk.md) · [pdf](docs/pdf/Smalltalk.pdf) |
 | Coil | compiler (lex+yacc → IR → C# `Reflection.Emit`) | curly-brace, ~1:1 with IL | [md](coil/coil.md) · [pdf](docs/pdf/Coil.pdf) |
 | Logo | interpreter (in cc-C) | turtle graphics → PNG/SVG/animated GIF + REPL | [md](logo/logo.md) · [pdf](docs/pdf/Logo.pdf) |
 | Lisp | interpreter (in cc-C) | closures, metacircular eval, a Lisp-compiler-in-Lisp | [md](lisp/lisp.md) · [pdf](docs/pdf/Lisp.pdf) |

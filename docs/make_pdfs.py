@@ -26,6 +26,7 @@ DOCS = [
     ("fortran/fortran.md", "Fortran90", "Fortran 90"),
     ("cobol/cobol.md",   "COBOL",       "COBOL"),
     ("ada/ada.md",       "Ada",         "Ada"),
+    ("smalltalk/smalltalk.md", "Smalltalk", "Smalltalk"),
 ]
 
 CSS = """
