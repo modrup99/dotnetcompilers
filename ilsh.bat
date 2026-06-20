@@ -13,7 +13,8 @@ if not exist "%EXE%" (
 )
 cd /d "%~dp0"
 title ilsh
-"%EXE%"
+REM  forward args (e.g.  ilsh --home C:\path  enables the virtual filesystem)
+"%EXE%" %*
 echo.
 echo [ilsh exited]  Press any key to close this window.
 pause >nul

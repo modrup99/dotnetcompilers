@@ -34,7 +34,7 @@ int u_cat(int n, int *argv, int start)
         char *f = (char *)argv[i];
         if (f[0] == '-' && f[1]) continue;
         any = 1;
-        char *d = (char *)rt_slurp((int)f);
+        char *d = (char *)rt_slurp((int)vmap(f));
         if (d == 0) { o("cat: "); o(f); o(": cannot open\n"); continue; }
         o(d);
     }
@@ -53,7 +53,14 @@ int u_ls(int n, int *argv, int start)
         else path = a;
     }
     if (path == 0) path = (char *)".";
-    int cnt = rt_lsopen((int)path);
+    char *real = path;
+    if (g_vfs)
+    {
+        char abs[1024]; vabs(path, abs);
+        if (streq(abs, "/")) { o("bin  etc  home  include  lib  tmp"); onl(); return 0; }   /* the virtual root */
+        real = vmap(abs);
+    }
+    int cnt = rt_lsopen((int)real);
     if (cnt < 0) { o("ls: "); o(path); o(": no such file or directory\n"); return 1; }
     for (i = 0; i < cnt; i++)
     {
@@ -104,7 +111,7 @@ int u_grep(int n, int *argv, int start)
     if (pat == 0) { o("usage: grep pattern [file...]\n"); return 2; }
     int hits = 0;
     if (nf == 0) hits = grep_buf(get_input(), pat, iflag, vflag, nflag);
-    else for (i = 0; i < nf; i++) { char *d = (char *)rt_slurp(files[i]); if (d) hits += grep_buf(d, pat, iflag, vflag, nflag); }
+    else for (i = 0; i < nf; i++) { char *d = (char *)rt_slurp((int)vmap((char *)files[i])); if (d) hits += grep_buf(d, pat, iflag, vflag, nflag); }
     return hits > 0 ? 0 : 1;
 }
 
@@ -118,7 +125,7 @@ void wc_buf(char *d, char *name)
 int u_wc(int n, int *argv, int start)
 {
     int i, any = 0;
-    for (i = start + 1; i < start + n; i++) { char *f = (char *)argv[i]; if (f[0] == '-' && f[1]) continue; any = 1; char *d = (char *)rt_slurp((int)f); if (d) wc_buf(d, f); }
+    for (i = start + 1; i < start + n; i++) { char *f = (char *)argv[i]; if (f[0] == '-' && f[1]) continue; any = 1; char *d = (char *)rt_slurp((int)vmap(f)); if (d) wc_buf(d, f); }
     if (!any) wc_buf(get_input(), 0);
     return 0;
 }
@@ -128,7 +135,7 @@ int u_headtail(int n, int *argv, int start, int tail)
 {
     int count = 10; char *file = 0; int i;
     for (i = start + 1; i < start + n; i++) { char *a = (char *)argv[i]; if (a[0] == '-' && a[1]) count = atoi(a + 1); else file = a; }
-    char *d = file ? (char *)rt_slurp((int)file) : get_input();
+    char *d = file ? (char *)rt_slurp((int)vmap(file)) : get_input();
     if (d == 0) return 1;
     int lines[20000]; int nl = splitlines(d, lines, 20000);
     int lo = tail ? (nl - count) : 0; int hi = tail ? nl : count;
@@ -142,7 +149,7 @@ int u_sort(int n, int *argv, int start)
 {
     char *file = 0; int i;
     for (i = start + 1; i < start + n; i++) { char *a = (char *)argv[i]; if (!(a[0] == '-' && a[1])) file = a; }
-    char *d = file ? (char *)rt_slurp((int)file) : get_input();
+    char *d = file ? (char *)rt_slurp((int)vmap(file)) : get_input();
     if (d == 0) return 1;
     int lines[20000]; int nl = splitlines(d, lines, 20000);
     int a2, b2;
@@ -162,7 +169,7 @@ int u_cut(int n, int *argv, int start)
         else if (streq(a, "-f") && i + 1 < start + n) { field = atoi((char *)argv[++i]); }
         else if (a[0] != '-') file = a;
     }
-    char *d = file ? (char *)rt_slurp((int)file) : get_input();
+    char *d = file ? (char *)rt_slurp((int)vmap(file)) : get_input();
     if (d == 0) return 1;
     int lines[20000]; int nl = splitlines(d, lines, 20000);
     for (i = 0; i < nl; i++)
@@ -189,7 +196,7 @@ int u_paste(int n, int *argv, int start)
     for (i = start + 1; i < start + n; i++) { char *a = (char *)argv[i]; if (a[0] != '-') files[nf++] = (int)a; }
     int starts[16]; int counts[16]; int bufs[16];
     int maxl = 0;
-    for (i = 0; i < nf; i++) { char *d = (char *)rt_slurp(files[i]); bufs[i] = (int)d; int *ls = (int *)malloc(20000 * 4); counts[i] = d ? splitlines(d, ls, 20000) : 0; starts[i] = (int)ls; if (counts[i] > maxl) maxl = counts[i]; }
+    for (i = 0; i < nf; i++) { char *d = (char *)rt_slurp((int)vmap((char *)files[i])); bufs[i] = (int)d; int *ls = (int *)malloc(20000 * 4); counts[i] = d ? splitlines(d, ls, 20000) : 0; starts[i] = (int)ls; if (counts[i] > maxl) maxl = counts[i]; }
     int r;
     for (r = 0; r < maxl; r++)
     {
@@ -209,23 +216,23 @@ int u_find(int n, int *argv, int start)
         if (streq(a, "-name") && i + 1 < start + n) pat = (char *)argv[++i];
         else if (a[0] != '-') path = a;
     }
-    int cnt = rt_find((int)path, pat ? (int)pat : 0);
+    int cnt = rt_find((int)vmap(path), pat ? (int)pat : 0);
     for (i = 0; i < cnt; i++) { o((char *)rt_findname(i)); onl(); }
     return 0;
 }
 
 /* ---- file ops ---- */
-int u_cp(int n, int *argv, int start) { if (n < 3) return 1; return rt_copy(argv[start + 1], argv[start + 2]); }
-int u_mv(int n, int *argv, int start) { if (n < 3) return 1; return rt_move(argv[start + 1], argv[start + 2]); }
-int u_rm(int n, int *argv, int start) { int i, r = 0; for (i = start + 1; i < start + n; i++) { char *a = (char *)argv[i]; if (a[0] == '-') continue; if (rt_remove((int)a)) r = 1; } return r; }
-int u_mkdir(int n, int *argv, int start) { int i, r = 0; for (i = start + 1; i < start + n; i++) { char *a = (char *)argv[i]; if (a[0] == '-') continue; if (rt_mkdir((int)a)) r = 1; } return r; }
-int u_touch(int n, int *argv, int start) { int i, r = 0; for (i = start + 1; i < start + n; i++) if (rt_touch(argv[i])) r = 1; return r; }
+int u_cp(int n, int *argv, int start) { if (n < 3) return 1; return rt_copy((int)vmap((char *)argv[start + 1]), (int)vmap((char *)argv[start + 2])); }
+int u_mv(int n, int *argv, int start) { if (n < 3) return 1; return rt_move((int)vmap((char *)argv[start + 1]), (int)vmap((char *)argv[start + 2])); }
+int u_rm(int n, int *argv, int start) { int i, r = 0; for (i = start + 1; i < start + n; i++) { char *a = (char *)argv[i]; if (a[0] == '-') continue; if (rt_remove((int)vmap(a))) r = 1; } return r; }
+int u_mkdir(int n, int *argv, int start) { int i, r = 0; for (i = start + 1; i < start + n; i++) { char *a = (char *)argv[i]; if (a[0] == '-') continue; if (rt_mkdir((int)vmap(a))) r = 1; } return r; }
+int u_touch(int n, int *argv, int start) { int i, r = 0; for (i = start + 1; i < start + n; i++) if (rt_touch((int)vmap((char *)argv[i]))) r = 1; return r; }
 int u_ln(int n, int *argv, int start)
 {
     int sym = 0; int a1 = 0, a2 = 0; int i;
     for (i = start + 1; i < start + n; i++) { char *a = (char *)argv[i]; if (streq(a, "-s")) sym = 1; else if (a1 == 0) a1 = (int)a; else a2 = (int)a; }
     if (a1 == 0 || a2 == 0) return 1;
-    return rt_link(a1, a2, sym);
+    return rt_link((int)vmap((char *)a1), (int)vmap((char *)a2), sym);
 }
 
 /* ---- more (paginate) ---- */
@@ -233,7 +240,7 @@ int u_more(int n, int *argv, int start)
 {
     char *file = 0; int i;
     for (i = start + 1; i < start + n; i++) { char *a = (char *)argv[i]; if (a[0] != '-') file = a; }
-    char *d = file ? (char *)rt_slurp((int)file) : get_input();
+    char *d = file ? (char *)rt_slurp((int)vmap(file)) : get_input();
     if (d == 0) return 1;
     int lines[20000]; int nl = splitlines(d, lines, 20000);
     int tty = rt_isatty();

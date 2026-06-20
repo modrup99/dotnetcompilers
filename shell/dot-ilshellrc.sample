@@ -1,0 +1,31 @@
+# ~/.ilshellrc — ilsh startup script.
+#
+# Copy this to your home directory as ".ilshellrc". It runs once when an
+# interactive shell starts, from the /home directory. Like any dotfile it is
+# hidden from `ls` unless you pass `ls -al`.
+#
+# This is the preferred place to configure the shell. If no .ilshellrc exists,
+# ilsh falls back to ~/.bashrc for backward compatibility.
+
+# --- virtual filesystem -------------------------------------------------------
+# Turn it on here (or pass `--home DIR` on the command line). With it off, the
+# shell uses real Windows paths exactly as before, so old scripts keep working.
+vfs on
+
+# Mount points are ordinary shell variables holding real Windows paths, so you
+# can lay out the tree however you like and repoint anything on the fly.
+# Defaults point /bin and /lib at the toolchain's out/ folder; override freely:
+#
+#   bin=C:\claude\dotnetcomp\out
+#   lib=C:\claude\dotnetcomp\out
+#   include=C:\myproject\include
+#   etc=C:\claude\dotnetcomp\etc
+#   tmp=C:\Temp
+#
+# Several virtual folders may point at the same real folder if you wish.
+
+# --- conveniences -------------------------------------------------------------
+alias ll='ls -al'
+alias la='ls -a'
+
+echo "ilsh ready.  'vfs status' shows the layout; lcd/lpwd/lls reach the real FS."

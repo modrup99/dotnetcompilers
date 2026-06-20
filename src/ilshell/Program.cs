@@ -14,7 +14,15 @@ internal static class Program
     static int Main(string[] args)
     {
         EnableVirtualTerminal();
-        string dll = Locate(args.Length > 0 ? args[0] : null);
+        // first non-flag arg (if any) names ilsh.dll; everything else is forwarded to the shell
+        string dllArg = null;
+        var shellArgs = new System.Collections.Generic.List<string>();
+        foreach (var a in args)
+        {
+            if (dllArg == null && !a.StartsWith("-") && a.EndsWith(".dll")) dllArg = a;
+            else shellArgs.Add(a);
+        }
+        string dll = Locate(dllArg);
         if (dll == null) { Console.Error.WriteLine("ilshell: cannot find ilsh.dll (pass its path as an argument)"); return 1; }
 
         string dir = Path.GetDirectoryName(dll);
@@ -27,7 +35,9 @@ internal static class Program
         var asm = alc.LoadFromAssemblyPath(dll);
         var m = asm.GetType("CProgram")?.GetMethod("Main", BindingFlags.Public | BindingFlags.Static);
         if (m == null) { Console.Error.WriteLine("ilshell: CProgram.Main not found in " + dll); return 1; }
-        return m.Invoke(null, null) is int rc ? rc : 0;
+        // CProgram.Main takes string[] when the shell's main wants argc/argv; forward the args
+        object[] inv = m.GetParameters().Length == 1 ? new object[] { shellArgs.ToArray() } : null;
+        return m.Invoke(null, inv) is int rc ? rc : 0;
     }
 
     static void EnableVirtualTerminal()

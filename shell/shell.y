@@ -99,10 +99,108 @@ char *getvar(char *nm)   /* shell-local variables only (not the Windows environm
     return 0;
 }
 
+/* ===================== virtual filesystem =====================
+ * Off by default (g_vfs == 0): every path passes through unchanged, so scripts that
+ * predate the VFS behave exactly as before. Enabled by `--home DIR` or `vfs on`, it
+ * presents a Unix-like tree (/home /bin /etc /include /lib /tmp and /home/windows) whose
+ * mount points are ordinary shell variables (home, bin, ...), so the layout is fully
+ * configurable from .ilshellrc and overridable on the fly. vmap() turns a virtual path
+ * into the real Windows path it stands for; lcd/lpwd/lls bypass it to reach the real FS. */
+int g_vfs;                 /* 0 = off (default, backward compatible) */
+char g_vcwd[1024];         /* virtual working directory, e.g. "/home" */
+char *vmount_pfx[10]; char *vmount_var[10]; int n_vmount;
+void vmount(char *pfx, char *var) { vmount_pfx[n_vmount] = pfx; vmount_var[n_vmount] = var; n_vmount++; }
+void vfs_mounts_init(void)
+{
+    n_vmount = 0;
+    vmount("/home/windows", "windows");   /* longest prefixes first */
+    vmount("/home", "home");
+    vmount("/bin", "bin");
+    vmount("/lib", "lib");
+    vmount("/include", "include");
+    vmount("/includes", "include");       /* alias */
+    vmount("/etc", "etc");
+    vmount("/tmp", "tmp");
+}
+/* sensible default mount targets; any can be overridden in .ilshellrc */
+void vfs_defaults(char *homedir)
+{
+    char *repo = (char *)rt_repo(); char b[1100];
+    setvar("home", homedir);
+    int up = sh_getenv((int)"USERPROFILE");          /* the real Windows user home, e.g. C:\Users\you */
+    setvar("windows", up ? (char *)up : (char *)rt_home());
+    sprintf((int)b, (int)"%s\\out", (int)repo);     setvar("bin", b);
+    sprintf((int)b, (int)"%s\\out", (int)repo);     setvar("lib", b);
+    sprintf((int)b, (int)"%s\\include", (int)repo); setvar("include", b);
+    sprintf((int)b, (int)"%s\\etc", (int)repo);     setvar("etc", b);
+    sprintf((int)b, (int)"%s\\tmp", (int)repo);     setvar("tmp", b);
+}
+/* collapse "." and ".." in an absolute virtual path */
+void vnorm(char *p, char *out)
+{
+    char tmp[1024]; strcpy(tmp, p);
+    char *segs[256]; int nseg = 0; int i = 0;
+    while (tmp[i])
+    {
+        while (tmp[i] == '/') i++;
+        if (!tmp[i]) break;
+        int st = i;
+        while (tmp[i] && tmp[i] != '/') i++;
+        if (tmp[i]) { tmp[i] = 0; i++; }
+        char *seg = tmp + st;
+        if (strcmp(seg, ".") == 0) continue;
+        if (strcmp(seg, "..") == 0) { if (nseg > 0) nseg--; continue; }
+        if (nseg < 256) segs[nseg++] = seg;
+    }
+    int o = 0; out[o++] = '/'; int k;
+    for (k = 0; k < nseg; k++) { if (k) out[o++] = '/'; int m = 0; while (segs[k][m]) out[o++] = segs[k][m++]; }
+    out[o] = 0;
+}
+/* resolve vpath (relative to g_vcwd if it doesn't start with '/') to an absolute virtual path */
+void vabs(char *vpath, char *out)
+{
+    char joined[2048];
+    if (vpath[0] == '/') strcpy(joined, vpath);
+    else { strcpy(joined, g_vcwd); strcat(joined, "/"); strcat(joined, vpath); }
+    vnorm(joined, out);
+}
+/* map a (possibly relative) virtual path to a real Windows path. Identity when VFS off. */
+char *vmap(char *vpath)
+{
+    if (!g_vfs) return vpath;
+    if (vpath[0] && vpath[1] == ':') return vpath;   /* already a real Windows path (C:\..) */
+    char abs[1024]; vabs(vpath, abs);
+    int i;
+    for (i = 0; i < n_vmount; i++)
+    {
+        char *pfx = vmount_pfx[i]; int pl = strlen(pfx);
+        if (strncmp(abs, pfx, pl) == 0 && (abs[pl] == 0 || abs[pl] == '/'))
+        {
+            char *real = getvar(vmount_var[i]); if (real == 0) real = (char *)"";
+            char *r = (char *)malloc(strlen(real) + strlen(abs) + 4);
+            strcpy(r, real); strcat(r, abs + pl);
+            int k; for (k = 0; r[k]; k++) if (r[k] == '/') r[k] = '\\';
+            return r;
+        }
+    }
+    return (char *)strdup((int)abs);   /* "/" root or unknown mount: callers handle */
+}
+
 /* resolve an external command against the shell's PATH variable */
 char *resolve_exec(char *cmd)
 {
+    if (cmd[0] == '/' && g_vfs) return vmap(cmd);                      /* /bin/foo -> real exe */
     if (strchr((int)cmd, '/') || strchr((int)cmd, '\\')) return cmd;   /* explicit path */
+    if (g_vfs)   /* a bare command: look in the /bin mount first */
+    {
+        char *bin = getvar("bin");
+        if (bin)
+        {
+            char cand[1100];
+            sprintf((int)cand, (int)"%s\\%s", (int)bin, (int)cmd);     if (rt_exists((int)cand)) return (char *)strdup((int)cand);
+            sprintf((int)cand, (int)"%s\\%s.exe", (int)bin, (int)cmd); if (rt_exists((int)cand)) return (char *)strdup((int)cand);
+        }
+    }
     char *path = getvar("PATH");
     if (path == 0) return cmd;
     char cand[1100]; char dir[1024];
@@ -305,11 +403,86 @@ int bi_echo(int n, int *argv, int start)
 }
 int bi_cd(int n, int *argv, int start)
 {
+    if (g_vfs)
+    {
+        char *arg = (n > 1) ? (char *)argv[start + 1] : (char *)"/home";
+        char abs[1024]; vabs(arg, abs);
+        if (strcmp(abs, "/") == 0) { strcpy(g_vcwd, "/"); return 0; }   /* the virtual root */
+        char *real = vmap(abs);
+        if (!rt_isdir((int)real)) { sh_write((int)"cd: "); sh_write((int)arg); sh_write((int)": no such directory\n"); return 1; }
+        strcpy(g_vcwd, abs);
+        sh_cd((int)real);    /* keep the real cwd aligned so relative paths to tools resolve */
+        return 0;
+    }
     char *d = (n > 1) ? (char *)argv[start + 1] : getvar("HOME");
     if (d == 0) return 1;
     return sh_cd((int)d);
 }
-int bi_pwd(void) { char buf[1024]; sh_cwd((int)buf); sh_write((int)buf); sh_write((int)"\n"); return 0; }
+int bi_pwd(void)
+{
+    if (g_vfs) { sh_write((int)g_vcwd); sh_write((int)"\n"); return 0; }
+    char buf[1024]; sh_cwd((int)buf); sh_write((int)buf); sh_write((int)"\n"); return 0;
+}
+/* lcd / lpwd / lls operate on the REAL Windows filesystem, bypassing the VFS */
+int bi_lcd(int n, int *argv, int start)
+{
+    char *d = (n > 1) ? (char *)argv[start + 1] : (char *)rt_home();
+    if (d == 0) return 1;
+    int r = sh_cd((int)d);
+    if (r) { sh_write((int)"lcd: "); sh_write((int)d); sh_write((int)": no such directory\n"); }
+    return r;
+}
+int bi_lpwd(void) { char buf[1024]; sh_cwd((int)buf); sh_write((int)buf); sh_write((int)"\n"); return 0; }
+int bi_lls(int n, int *argv, int start)
+{
+    int lflag = 0, aflag = 0; char *path = 0; int i;
+    for (i = start + 1; i < start + n; i++)
+    {
+        char *a = (char *)argv[i];
+        if (a[0] == '-' && a[1]) { int j = 1; while (a[j]) { if (a[j] == 'l') lflag = 1; if (a[j] == 'a') aflag = 1; j++; } }
+        else path = a;
+    }
+    if (path == 0) path = (char *)".";
+    int cnt = rt_lsopen((int)path);   /* real path, no vmap */
+    if (cnt < 0) { sh_write((int)"lls: "); sh_write((int)path); sh_write((int)": no such file or directory\n"); return 1; }
+    for (i = 0; i < cnt; i++)
+    {
+        char *nm = (char *)rt_lsname(i);
+        if (!aflag && nm[0] == '.') continue;
+        if (lflag) { char b[24]; sh_write((int)rt_lsmode(i)); sh_write((int)" 1 user group "); sprintf((int)b, (int)"%8ld", rt_lssize(i)); sh_write((int)b); sh_write((int)" "); sh_write((int)rt_lsdate(i)); sh_write((int)" "); sh_write((int)nm); sh_write((int)"\n"); }
+        else { sh_write((int)nm); sh_write((int)"  "); }
+    }
+    if (!lflag && cnt > 0) sh_write((int)"\n");
+    return 0;
+}
+/* vfs on [DIR] | off | status — turn the virtual filesystem on/off and show mounts */
+int bi_vfs(int n, int *argv, int start)
+{
+    char *sub = (n > 1) ? (char *)argv[start + 1] : (char *)"status";
+    if (strcmp(sub, "on") == 0)
+    {
+        char rcwd[1024]; sh_cwd((int)rcwd);
+        char *dir = (n > 2) ? (char *)argv[start + 2] : rcwd;
+        vfs_mounts_init();
+        if (getvar("home") == 0) vfs_defaults(dir); else setvar("home", dir);
+        if (getvar("windows") == 0) vfs_defaults(dir);
+        g_vfs = 1; strcpy(g_vcwd, "/home");
+        char *real = vmap("/home"); sh_cd((int)real);
+        return 0;
+    }
+    if (strcmp(sub, "off") == 0) { g_vfs = 0; return 0; }
+    /* status */
+    sh_write((int)"vfs: "); sh_write(g_vfs ? (int)"on\n" : (int)"off\n");
+    if (g_vfs)
+    {
+        int i;
+        for (i = 0; i < n_vmount; i++)
+        {
+            char *real = getvar(vmount_var[i]); sh_write((int)vmount_pfx[i]); sh_write((int)"  ->  "); sh_write(real ? (int)real : (int)"(unset)"); sh_write((int)"\n");
+        }
+    }
+    return 0;
+}
 int bi_set(void)
 {
     int i;
@@ -362,6 +535,10 @@ int print_usage(char *c)
 {
     if (streq(c, "cd")) sh_write((int)"usage: cd [dir]   (no arg = $HOME)\n");
     else if (streq(c, "pwd")) sh_write((int)"usage: pwd\n");
+    else if (streq(c, "lcd")) sh_write((int)"usage: lcd [dir]   (change the REAL Windows directory; bypasses the virtual FS)\n");
+    else if (streq(c, "lpwd")) sh_write((int)"usage: lpwd   (print the REAL Windows working directory)\n");
+    else if (streq(c, "lls")) sh_write((int)"usage: lls [-l] [-a] [path]   (list a REAL Windows directory)\n");
+    else if (streq(c, "vfs")) sh_write((int)"usage: vfs on [DIR] | off | status   (virtual filesystem; mounts are the home/bin/etc/... shell vars)\n");
     else if (streq(c, "echo")) sh_write((int)"usage: echo [args...]\n");
     else if (streq(c, "export")) sh_write((int)"usage: export NAME[=value]...\n");
     else if (streq(c, "set")) sh_write((int)"usage: set   (list shell variables)\n");
@@ -414,6 +591,8 @@ int bi_help(int n, int *argv, int start)
     sh_write((int)"ilsh built-in commands:\n");
     sh_write((int)"  shell:   cd push pop pwd echo export set alias unalias source . jobs help exit true false test [\n");
     sh_write((int)"  files:   ls cat cp mv rm mkdir touch ln find\n");
+    sh_write((int)"  vfs:     vfs on [DIR]/off/status  (virtual / + /home + /bin + /etc + /include + /lib + /tmp)\n");
+    sh_write((int)"           lcd lpwd lls  reach the REAL Windows filesystem; --home DIR enables it at startup\n");
     sh_write((int)"  build:   make [-f file] [VAR=val] [target]\n");
     sh_write((int)"  text:    grep sort wc head tail cut paste more\n");
     sh_write((int)"  syntax:  if/then/elif/else/fi  while/do/done  for X in .. do .. done\n");
@@ -470,7 +649,7 @@ int bi_gfx(int n, int *argv, int start)
 
 int source_file(char *path)
 {
-    char *d = (char *)rt_slurp((int)path);
+    char *d = (char *)rt_slurp((int)vmap(path));
     if (d == 0) return 1;
     root = 0; yy_scan_string((int)d); yyparse(); exec(root);
     return last_status;
@@ -511,6 +690,10 @@ int run_command(int n, int *argv, int start)
     if (strcmp(cmd, "echo") == 0) return bi_echo(n, argv, start);
     if (strcmp(cmd, "cd") == 0) return bi_cd(n, argv, start);
     if (strcmp(cmd, "pwd") == 0) return bi_pwd();
+    if (strcmp(cmd, "lcd") == 0) return bi_lcd(n, argv, start);
+    if (strcmp(cmd, "lpwd") == 0) return bi_lpwd();
+    if (strcmp(cmd, "lls") == 0) return bi_lls(n, argv, start);
+    if (strcmp(cmd, "vfs") == 0) return bi_vfs(n, argv, start);
     if (strcmp(cmd, "export") == 0) return bi_export(n, argv, start);
     if (strcmp(cmd, "set") == 0) return bi_set();
     if (strcmp(cmd, "true") == 0) return 0;
@@ -524,7 +707,7 @@ int run_command(int n, int *argv, int start)
     /* external: resolve via shell PATH, run (foreground) or launch (& background) */
     int *arr = (int *)malloc(n * 4); int j;
     arr[0] = (int)resolve_exec(cmd);
-    for (j = 1; j < n; j++) arr[j] = argv[start + j];
+    for (j = 1; j < n; j++) { char *a = (char *)argv[start + j]; arr[j] = (g_vfs && a[0] == '/') ? (int)vmap(a) : (int)a; }
     if (g_bg) { int pid = sh_run_bg((int)arr, n); printf((int)"[bg] pid %d\n", pid); return 0; }
     return sh_run((int)arr, n);
 }
@@ -541,7 +724,7 @@ int exec_simple(int node)
     {
         struct Node *en = (struct Node *)e;
         if (en->a == 0) argc = append_expanded((char *)en->b, argv, argc);
-        else { char *t = expand((char *)en->b);
+        else { char *t = vmap(expand((char *)en->b));
                if (en->a == 1) sh_rout((int)t, 0);
                else if (en->a == 2) sh_rout((int)t, 1);
                else sh_rin((int)t); }
@@ -702,7 +885,7 @@ void repl(void)
     acc[0] = 0;
     while (1)
     {
-        if (acc[0] == 0) { sh_cwd((int)cwd); sprintf((int)prompt, (int)"%s $ ", (int)cwd); }
+        if (acc[0] == 0) { if (g_vfs) strcpy(cwd, g_vcwd); else sh_cwd((int)cwd); sprintf((int)prompt, (int)"%s $ ", (int)cwd); }
         else strcpy(prompt, "> ");
         int r = read_line(prompt, line, 4096);
         if (r < 0) { putchar('\n'); break; }
@@ -727,18 +910,47 @@ void sh_init(void)
     setvar("PATH", ps ? (char *)ps : (char *)"C:\\Windows\\System32;C:\\Windows");
 }
 
-/* interactive (login) shell: start in HOME and run ~/.bashrc */
+/* --home DIR on the command line turns the VFS on and points /home at DIR.
+ * (Args arrive via rt_argv/rt_argc, populated by cc's emitted Main from the launcher.) */
+void parse_args(int ac, int *av)
+{
+    int i;
+    for (i = 1; i < ac; i++)
+    {
+        char *a = (char *)av[i];
+        if (strcmp(a, "--home") == 0 && i + 1 < ac)
+        {
+            vfs_mounts_init(); vfs_defaults((char *)av[++i]);
+            g_vfs = 1; strcpy(g_vcwd, "/home");
+        }
+        else if (strncmp(a, "--home=", 7) == 0)
+        {
+            vfs_mounts_init(); vfs_defaults(a + 7);
+            g_vfs = 1; strcpy(g_vcwd, "/home");
+        }
+    }
+}
+
+/* interactive (login) shell: start in the home directory and run its startup script.
+ * .ilshellrc is the preferred config (run from /home, or ~ when the VFS is off); .bashrc
+ * is still honored for backward compatibility. */
 void sh_login(void)
 {
-    char *home = getvar("HOME");
-    sh_cd((int)home);
-    char rc[1100]; sprintf((int)rc, (int)"%s\\.bashrc", (int)home);
+    if (g_vfs) { char *real = vmap("/home"); sh_cd((int)real); }
+    else sh_cd((int)getvar("HOME"));
+
+    char *rcbase = g_vfs ? vmap("/home") : getvar("HOME");
+    char rc[1100];
+    sprintf((int)rc, (int)"%s\\.ilshellrc", (int)rcbase);
+    if (rt_exists((int)rc)) { source_file(rc); return; }
+    sprintf((int)rc, (int)"%s\\.bashrc", (int)rcbase);
     if (rt_exists((int)rc)) source_file(rc);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     sh_init();
+    parse_args(argc, (int *)argv);
     if (rt_isatty()) { sh_login(); repl(); return last_status; }
     yyparse();
     exec(root);

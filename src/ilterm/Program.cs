@@ -28,6 +28,7 @@ internal static class Program
         AssemblyLoadContext.Default.Resolving += (ctx, name) =>
             name.Name == "CRuntime" ? typeof(CRuntime).Assembly : null;
         Shell.Path = args.Length > 0 ? System.IO.Path.GetFullPath(args[0]) : "out/ilsh.dll";
+        Shell.Args = args.Length > 1 ? args[1..] : System.Array.Empty<string>();   // forwarded to the shell (e.g. --home DIR)
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
@@ -35,7 +36,7 @@ internal static class Program
         AppBuilder.Configure<App>().UsePlatformDetect().LogToTrace();
 }
 
-internal static class Shell { public static string Path = "out/ilsh.dll"; }
+internal static class Shell { public static string Path = "out/ilsh.dll"; public static string[] Args = System.Array.Empty<string>(); }
 
 internal sealed class App : Application
 {
@@ -92,8 +93,9 @@ internal sealed class TerminalControl : Control
         try
         {
             var asm = Assembly.LoadFrom(Shell.Path);
-            asm.GetType("CProgram")!.GetMethod("Main", BindingFlags.Public | BindingFlags.Static)!
-                .Invoke(null, null);
+            var m = asm.GetType("CProgram")!.GetMethod("Main", BindingFlags.Public | BindingFlags.Static)!;
+            object[] inv = m.GetParameters().Length == 1 ? new object[] { Shell.Args } : null;   // forward --home etc.
+            m.Invoke(null, inv);
         }
         catch (Exception e) { lock (typeof(TerminalControl)) Console.Error.WriteLine(e); }
     }
