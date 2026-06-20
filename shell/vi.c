@@ -85,6 +85,88 @@ int vi_save(char *path)
     return 0;
 }
 
+/* ---- syntax highlighting ----
+ * A line tokenizer that emits ANSI SGR color (the ilterm grid and any VT console render
+ * it).  C-style comments/strings/numbers/preprocessor plus a keyword table chosen by file
+ * extension.  Block-comment state is carried across lines via *incmt.  Toggle with
+ * `:syntax on` / `:syntax off`. */
+void vout(char *s);     /* defined just below */
+int vsyntax;            /* 1 = highlight (default on) */
+char *g_kw;             /* space-delimited keyword set for the current file type */
+char *VKW_C   = " auto break case char const continue default do double else enum extern float for goto if int long register return short signed sizeof static struct switch typedef union unsigned void volatile while ";
+char *VKW_PAS = " and array begin case const div do downto else end file for function goto if in label mod nil not of or packed procedure program record repeat set then to type until var while with ";
+char *VKW_LUA = " and break do else elseif end false for function goto if in local nil not or repeat return then true until while ";
+
+int vi_iskw(char *s, int from, int to)
+{
+    int len = to - from; if (len <= 0 || len > 20) return 0;
+    char w[24]; w[0] = ' '; int k; for (k = 0; k < len; k++) w[k + 1] = s[from + k]; w[len + 1] = ' '; w[len + 2] = 0;
+    return strstr((int)g_kw, (int)w) != 0;
+}
+
+/* block-comment state entering line `upto` (scans /* *​/, skipping strings and // ) */
+int vi_cmt_state_at(int upto)
+{
+    int in = 0, i;
+    for (i = 0; i < upto && i < vnl; i++)
+    {
+        char *s = vln[i]; int j = 0;
+        while (s[j])
+        {
+            if (in) { if (s[j] == '*' && s[j + 1] == '/') { in = 0; j += 2; continue; } j++; }
+            else if (s[j] == '/' && s[j + 1] == '/') break;
+            else if (s[j] == '/' && s[j + 1] == '*') { in = 1; j += 2; }
+            else if (s[j] == '"' || s[j] == 39) { int q = s[j]; j++; while (s[j] && s[j] != q) { if (s[j] == '\\' && s[j + 1]) j++; j++; } if (s[j]) j++; }
+            else j++;
+        }
+    }
+    return in;
+}
+
+char hlbuf[16384]; int hloi; int hlvis; int hlavail;
+void hl_e(char *esc) { if (hlvis >= hlavail || hloi > 16000) return; int k = 0; while (esc[k]) hlbuf[hloi++] = esc[k++]; }   /* color code: no visible width */
+int  hl_c(int c) { if (hlvis >= hlavail || hloi > 16000) return 0; hlbuf[hloi++] = (char)c; hlvis++; return 1; }            /* visible char (capped) */
+
+/* emit one highlighted line (capped to `avail` visible columns); update *incmt */
+void vi_hl_line(char *s, int avail, int *incmt)
+{
+    hloi = 0; hlvis = 0; hlavail = avail;
+    int i = 0, len = strlen(s);
+    int j = 0; while (s[j] == ' ' || s[j] == '\t') j++;
+    if (!*incmt && s[j] == '#') { hl_e("\x1b[33m"); while (i < len) { hl_c(s[i]); i++; } hl_e("\x1b[0m"); hlbuf[hloi] = 0; vout(hlbuf); return; }
+    while (i < len)
+    {
+        if (*incmt)
+        {
+            hl_e("\x1b[90m");
+            while (i < len) { if (s[i] == '*' && s[i + 1] == '/') { hl_c('*'); hl_c('/'); i += 2; *incmt = 0; break; } hl_c(s[i]); i++; }
+            hl_e("\x1b[0m"); continue;
+        }
+        int c = s[i];
+        if (c == '/' && s[i + 1] == '/') { hl_e("\x1b[90m"); while (i < len) { hl_c(s[i]); i++; } hl_e("\x1b[0m"); break; }
+        if (c == '/' && s[i + 1] == '*') { hl_e("\x1b[90m"); hl_c('/'); hl_c('*'); i += 2; *incmt = 1; continue; }
+        if (c == '"' || c == 39)
+        {
+            int q = c; hl_e("\x1b[32m"); hl_c(c); i++;
+            while (i < len) { if (s[i] == '\\' && s[i + 1]) { hl_c(s[i]); i++; hl_c(s[i]); i++; continue; } if (s[i] == q) { hl_c(s[i]); i++; break; } hl_c(s[i]); i++; }
+            hl_e("\x1b[0m"); continue;
+        }
+        if (c >= '0' && c <= '9') { hl_e("\x1b[36m"); while (i < len && (isalnum(s[i]) || s[i] == '.')) { hl_c(s[i]); i++; } hl_e("\x1b[0m"); continue; }
+        if (isalpha(c) || c == '_')
+        {
+            int from = i; while (i < len && (isalnum(s[i]) || s[i] == '_')) i++;
+            int kw = vi_iskw(s, from, i);
+            if (kw) hl_e("\x1b[1;35m");
+            int p; for (p = from; p < i; p++) hl_c(s[p]);
+            if (kw) hl_e("\x1b[0m");
+            continue;
+        }
+        hl_c(c); i++;
+    }
+    if (hloi <= 16000) { hlbuf[hloi++] = 27; hlbuf[hloi++] = '['; hlbuf[hloi++] = '0'; hlbuf[hloi++] = 'm'; }   /* final reset */
+    hlbuf[hloi] = 0; vout(hlbuf);
+}
+
 /* ---- rendering ---- */
 void vout(char *s) { sh_write((int)s); }
 void vclampx(void)
@@ -109,6 +191,7 @@ void vi_render(void)
     vscroll();
     rt_clear();
     int i;
+    int incmt = vsyntax ? vi_cmt_state_at(vtop) : 0;   /* block-comment carry for the first visible line */
     for (i = 0; i < textrows; i++)
     {
         int ln = vtop + i;
@@ -117,7 +200,8 @@ void vi_render(void)
         {
             if (vshownum) { char nb[8]; sprintf((int)nb, (int)"%4d ", ln + 1); vout(nb); }
             char *s = vln[ln]; int sl = strlen(s); int avail = cols - numw;
-            if (sl <= avail) vout(s);
+            if (vsyntax) vi_hl_line(s, avail, &incmt);    /* updates incmt for the next line */
+            else if (sl <= avail) vout(s);
             else { char *t = (char *)malloc(avail + 1); int k; for (k = 0; k < avail; k++) t[k] = s[k]; t[avail] = 0; vout(t); }
         }
         else vout("~");
@@ -265,6 +349,9 @@ void vi_excmd(char *c)
     if (strcmp(c, "wq") == 0 || strcmp(c, "x") == 0) { vi_save(vfile); vquit = 1; return; }
     if (strcmp(c, "set nu") == 0) { vshownum = 1; return; }
     if (strcmp(c, "set nonu") == 0) { vshownum = 0; return; }
+    if (strcmp(c, "syntax on") == 0 || strcmp(c, "syn on") == 0) { vsyntax = 1; return; }
+    if (strcmp(c, "syntax off") == 0 || strcmp(c, "syn off") == 0) { vsyntax = 0; return; }
+    if (strcmp(c, "syntax") == 0 || strcmp(c, "syn") == 0) { sprintf((int)vmsg, (int)"syntax %s", vsyntax ? (int)"on" : (int)"off"); return; }
     if (c[0] >= '0' && c[0] <= '9') { int ln = atoi(c); if (ln >= 1 && ln <= vnl) vcy = ln - 1; vcx = 0; return; }
     if (c[0] == '%' && c[1] == 's')   /* :%s/old/new/ */
     {
@@ -384,6 +471,9 @@ int vi_main(int n, int *argv, int start)
     strcpy(vfile, (char *)argv[start + 1]);
     vnl = 0; vtop = 0; vcy = 0; vcx = 0; vmode = 0; vdirty = 0; vquit = 0;
     vshownum = 0; vcmdlen = 0; vmsg[0] = 0; vynl = 0; vsearch[0] = 0; vpend = 0; vcount = 0; u_sp = 0;
+    vsyntax = 1; g_kw = VKW_C;                          /* highlight on by default; keyword set by extension */
+    char *ext = (char *)strrchr((int)vfile, '.');
+    if (ext) { if (streq(ext, ".pas") || streq(ext, ".pp")) g_kw = VKW_PAS; else if (streq(ext, ".lua")) g_kw = VKW_LUA; }
     vi_load(vfile);
     sprintf((int)vmsg, (int)"\"%s\" %dL", (int)vfile, vnl);
 

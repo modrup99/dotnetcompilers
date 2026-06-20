@@ -74,6 +74,12 @@ Beyond the file/text coreutils, ilsh has these built in (type `NAME -h` for usag
 | `wc [file…]` | line / word / byte counts |
 | `man NAME` | page a language's reference doc (`man pascal`, `man lua`, `man shell`) through `more` |
 | `ps [-e]` | list shell-started background jobs; `-e` also dumps the OS `tasklist` |
+| `vi FILE` | modal editor with **syntax highlighting** (`:syntax on`/`:syntax off`) |
+
+`vi` colors keywords, strings, comments (`//` and `/* */`, tracked across lines),
+numbers, and preprocessor lines. The keyword set follows the file extension (C by
+default; Pascal `.pas`, Lua `.lua`). Highlighting is on by default; `:syntax off` disables
+it and `:syntax on` re-enables it.
 
 ## The windowed terminal (ilterm)
 

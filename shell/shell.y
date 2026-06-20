@@ -549,7 +549,7 @@ int print_usage(char *c)
     else if (streq(c, "push")) sh_write((int)"usage: push <directory>   (cd there, remembering the current dir)\n");
     else if (streq(c, "pop")) sh_write((int)"usage: pop   (return to the directory saved by the last push)\n");
     else if (streq(c, "make")) sh_write((int)"usage: make [-f file] [VAR=val...] [target]\n");
-    else if (streq(c, "vi")) sh_write((int)"usage: vi <file>   (modal editor: i/a/o insert, ESC normal, :w :q :wq, / search, u undo, dd/yy/p)\n");
+    else if (streq(c, "vi")) sh_write((int)"usage: vi <file>   (modal editor: i/a/o insert, ESC normal, :w :q :wq, / search, u undo, dd/yy/p, :syntax on/off)\n");
     else if (streq(c, "xeyes")) sh_write((int)"usage: xeyes   (open the eyes-follow-the-mouse demo in a graphics window)\n");
     else if (streq(c, "gfx")) sh_write((int)"usage: gfx <program>   (run out\\<program>.dll in a graphics window)\n");
     else if (streq(c, "exit")) sh_write((int)"usage: exit [code]\n");
