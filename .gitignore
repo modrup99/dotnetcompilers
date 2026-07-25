@@ -22,3 +22,7 @@ Thumbs.db
 
 # COBOL file-I/O test data
 *.dat
+
+# generated beside compiled assemblies
+*.runtimeconfig.json
+*.ir
