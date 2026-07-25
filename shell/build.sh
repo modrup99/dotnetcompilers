@@ -7,7 +7,7 @@ CC="dotnet src/Cc/bin/Release/net10.0/cc.dll"
 dotnet yacc/yacc.dll < shell/shell.y > out/sh_parse.c   # grammar  -> LALR parser
 dotnet lex/lex.dll   < shell/shell.l > out/sh_scan.c    # patterns -> scanner
 cat out/sh_parse.c out/sh_scan.c shell/coreutils.c shell/make.c shell/vi.c > out/ilsh.c   # parser + scanner + builtins + make + vi
-$CC out/ilsh.c -o out/ilsh.dll --exe                    # C subset -> IL
+$CC out/ilsh.c -o out/ilsh.dll --exe --icon icons/ilforge.png                    # C subset -> IL
 echo "built out/ilsh.dll"
 
 # build the launch .exe and stage ilsh.dll + CRuntime.dll next to it

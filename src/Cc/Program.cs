@@ -69,6 +69,11 @@ static int Run(string[] args)
         return 2;
     }
 
+    // Like a Visual Studio developer prompt, honour INCLUDE and LIB from the environment
+    // (the ILForge Developer Command Prompt sets them). Explicit -I/-L win: they come first.
+    AddEnvPaths(includeDirs, "INCLUDE");
+    AddEnvPaths(libDirs, "LIB");
+
     string source = File.ReadAllText(input);
     output ??= Path.ChangeExtension(input, ".dll");
     // The managed image is always a .dll (a native apphost .exe boots it); so an
@@ -163,6 +168,15 @@ static string? FindAppHostTemplate()
 }
 
 // The emitted assembly references CRuntime; place it alongside the output.
+// append the semicolon-separated directories of an environment variable to a search list
+static void AddEnvPaths(List<string> into, string envVar)
+{
+    string? v = Environment.GetEnvironmentVariable(envVar);
+    if (string.IsNullOrWhiteSpace(v)) return;
+    foreach (var part in v.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        if (Directory.Exists(part) && !into.Contains(part)) into.Add(part);
+}
+
 // walk up from the compiler's location to the repo root (folder with build_all.sh),
 // where the toolchain's icons\ live; falls back to the current directory.
 static string FindRepo()

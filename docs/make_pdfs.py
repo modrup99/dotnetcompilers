@@ -29,6 +29,11 @@ DOCS = [
     ("smalltalk/smalltalk.md", "Smalltalk", "Smalltalk"),
     ("lua/lua.md",       "Lua",         "Lua"),
     ("awk/awk.md",       "AWK",         "AWK"),
+    ("pascal/pascal.md", "Pascal",      "Pascal"),
+    ("oberon/oberon.md", "Oberon",      "Modula-2 / Oberon-2"),
+    ("shell/shell.md",   "Shell",       "ILForge Shell"),
+    ("docs/LANGUAGES.md", "Languages",  "ILForge - the languages"),
+    ("docs/lex-yacc.md", "LexYacc",     "ILForge - lex and yacc"),
 ]
 
 CSS = """

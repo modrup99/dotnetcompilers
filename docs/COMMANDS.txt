@@ -1,0 +1,48 @@
+ILForge - command reference
+===========================
+
+COMPILERS (source -> .NET IL; each produces a native .exe with its language's icon)
+  cc       <f.c>    [-o out] [--exe|--dll] [-I dir] [-L dir] [-l name] [--icon f] [--noicon]
+  pascal   <f.pas>  [-o out.exe]                Turbo-Pascal-style Pascal
+  oberon   <f.mod>  [-o out.exe]                Modula-2 / Oberon-2
+  tcpp     <f.cpp>  [-o out.exe]                Tiny C++ (classes, virtual, new/delete)
+  qbasic   <f.bas>  [-o out.exe]                QBasic (typed vars, SUB/FUNCTION, graphics)
+  forth    <f.fth>  [-o out.exe]                Forth (words -> methods)
+  fortran  <f.f90>  [-o out] [--dll]            Fortran 90 (free form)
+  cobol    <f.cob>  [-o out] [--dll]            COBOL (4 divisions, PIC, PERFORM)
+  ada      <f.adb>  [-o out] [--dll]            Ada subset (in/out params, enums)
+  smalltalk<f.st>   [-o out] [--dll]            Smalltalk (objects + message dispatch)
+  lua      <f.lua>  [-o out] [--dll]            Lua (tables, first-class functions)
+  awk      <f.awk>  [-o out] [--dll]            AWK (pattern-action over stdin)
+  coilfe   <f.coil> [-o out] [--dll]            Coil (curly-brace, ~1:1 with IL)
+
+INTERPRETERS
+  logo   <f.logo> [-png|-svg|-gif out]          turtle graphics (no args = REPL)
+  lisp   [f.lisp]                               closures, metacircular eval (no args = REPL)
+  prolog <f.pl>                                 unification, backtracking, cut
+  bc     ["EXPR"]                               scientific calculator (no args = REPL)
+
+COMPILER-COMPILERS (see docs\lex-yacc.md)
+  yacc < grammar.y  > parse.c                   LALR(1) parser generator  (-v for stats)
+  lex  < scanner.l  > scan.c                    scanner generator
+  then: cat parse.c scan.c > lang.c  &&  cc lang.c -o lang.exe --exe
+
+SHELLS
+  ILForge Developer Command Prompt              this console: everything on PATH
+  ilsh                                          Unix-style shell (pipes, coreutils, vi)
+
+INSIDE ilsh
+  files    ls cat cp mv rm mkdir touch ln find more
+  text     grep sort wc head tail cut paste sed
+  tools    bc date time man ps make vi
+  vfs      vfs on|off|status   lcd lpwd lls   refresh
+  syntax   if/then/elif/else/fi  while/do/done  for X in .. do .. done
+           pipes |   redirect > >> <   sequence ;   && ||   background &
+  help     help          (per-command usage: NAME -h)
+  manual   man <language>                       e.g. man lua, man pascal, man shell
+
+EVERY compiler and tool accepts -h (or prints usage when run with no arguments).
+
+DOCUMENTATION      docs\README.md  (index)   docs\LANGUAGES.md  (all languages)
+                   docs\lex-yacc.md (build your own language)   docs\pdf\*.pdf
+EXAMPLES           examples\  (incl. examples\lexyacc\calc and \minishell)

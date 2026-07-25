@@ -1,8 +1,21 @@
-# dotnetcomp — compilers that emit pure .NET IL
+# ILForge — a polyglot .NET compiler workbench
 
-A workbench for building compilers (for new and existing languages) that target
-**pure .NET IL**, producing ordinary CLR assemblies that interoperate directly
-with C#, VB.NET, and any .NET library.
+**ILForge** builds compilers (for new and existing languages) that target **pure .NET
+IL**, producing ordinary CLR assemblies that interoperate directly with C#, VB.NET, and
+any .NET library. Seventeen languages ship with it, and the whole toolchain is
+self-hosted: our own `lex` and `yacc` generate C, our own C compiler `cc` lowers that C to
+IL, and the other compilers are written in that C.
+
+```
+   language source ──▶ lex + yacc ──▶ C ──▶ cc ──▶ .NET IL ──▶ .exe / .dll
+```
+
+> **The manual:** [docs/README.md](docs/README.md) — with
+> [all the languages](docs/LANGUAGES.md), the
+> [lex + yacc guide](docs/lex-yacc.md) for building your own, and the
+> [shell reference](shell/shell.md).
+> **Install:** [installer/README.md](installer/README.md) — puts *ILForge Shell* and the
+> *ILForge Developer Command Prompt* on the Start Menu.
 
 The first compiler, **`tinyc`**, is a complete-but-minimal proof of the whole
 pipeline: lexer → parser → AST → IL codegen → real `.dll`/`.exe`.

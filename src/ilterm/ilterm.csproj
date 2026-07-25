@@ -5,6 +5,9 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationIcon>..\..\icons\ilforge.ico</ApplicationIcon>
+    <Product>ILForge</Product>
+    <AssemblyTitle>ILForge Terminal</AssemblyTitle>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.2.1" />

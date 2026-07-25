@@ -11,8 +11,8 @@ mkdir -p out
 cp src/Cc/bin/Release/net10.0/CRuntime.dll out/CRuntime.dll   # keep the shared runtime fresh for everything in out/
 
 echo "[2/5] compiling lex and yacc (our C -> IL) ..."
-$CC lex/lex.c   -o lex/lex.dll   --exe
-$CC yacc/yacc.c -o yacc/yacc.dll --exe
+$CC lex/lex.c   -o lex/lex.dll   --exe --icon icons/ilforge.png
+$CC yacc/yacc.c -o yacc/yacc.dll --exe --icon icons/ilforge.png
 
 echo "[3/5] building the shell (ilsh.dll) + ilshell.exe launcher ..."
 bash shell/build.sh

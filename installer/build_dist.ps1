@@ -12,7 +12,7 @@
 param([switch]$Build, [switch]$Zip)
 $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path "$PSScriptRoot\..").Path
-$dest = Join-Path $repo "dist\ildev"
+$dest = Join-Path $repo "dist\ILForge"
 
 if ($Build) { & bash "$repo/build_all.sh"; if ($LASTEXITCODE -ne 0) { throw "build_all.sh failed" } }
 
@@ -35,10 +35,11 @@ function StageFile($rel) {
     Copy-Item $s $d -Force
 }
 
-# runtime marker + rebuild helpers
+# runtime marker + rebuild helpers + the developer command prompt
 StageFile "build_all.sh"
 StageFile "build-all.bat"
 StageFile "README.md"
+StageFile "ilforge-cmd.bat"
 
 # the compilers/tools, the C compiler, and the launchers (with all their deps)
 StageDir  "out"
@@ -48,7 +49,9 @@ StageDir  "src\Cc\bin\Release\net10.0"
 StageDir  "src\ilshell\bin\Release\net10.0"
 StageDir  "src\ilterm\bin\Release\net10.0"
 StageDir  "src\ilgfx\bin\Release\net10.0"
-StageDir  "icons"                                  # default + per-language exe icons (cc embeds these)
+StageDir  "icons"                                  # brand + per-language exe icons (cc embeds these)
+StageDir  "docs"                                   # the manual: languages, lex/yacc guide, PDFs
+StageDir  "examples"                               # worked examples (incl. lex/yacc calc + minishell)
 
 # language reference docs (so `man <lang>` works) + sample config
 Get-ChildItem $repo -Directory | Where-Object { $_.Name -notin @("dist","installer","src",".git") } | ForEach-Object {
@@ -71,7 +74,7 @@ $bytes = (Get-ChildItem $dest -Recurse -File | Measure-Object Length -Sum).Sum
 Write-Host ("Distribution staged at {0} ({1:N1} MB)" -f $dest, ($bytes / 1MB))
 
 if ($Zip) {
-    $zip = Join-Path $repo "dist\ildev.zip"
+    $zip = Join-Path $repo "dist\ILForge.zip"
     if (Test-Path $zip) { Remove-Item -Force $zip }
     Compress-Archive -Path "$dest\*" -DestinationPath $zip -Force
     Write-Host "Zipped -> $zip"

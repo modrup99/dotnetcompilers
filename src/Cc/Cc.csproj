@@ -7,6 +7,9 @@
     <Nullable>enable</Nullable>
     <AssemblyName>cc</AssemblyName>
     <RootNamespace>Cc</RootNamespace>
+    <ApplicationIcon>..\..\icons\ilforge.ico</ApplicationIcon>
+    <Product>ILForge</Product>
+    <AssemblyTitle>ILForge C Compiler</AssemblyTitle>
   </PropertyGroup>
 
   <ItemGroup>

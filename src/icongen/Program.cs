@@ -47,7 +47,16 @@ internal static class Program
             File.WriteAllBytes(path, png);
             Console.WriteLine($"  {path}  ({label})");
         }
-        Console.WriteLine($"generated {langs.Length} icons in {dir}");
+
+        // the product mark: an anvil over a forge glow, as PNG + a multi-size .ico
+        // (C# projects need an .ico for <ApplicationIcon>).
+        byte[] brand = RenderBrand();
+        File.WriteAllBytes(Path.Combine(dir, "ilforge.png"), EncodePng(N, N, brand));
+        Console.WriteLine($"  {Path.Combine(dir, "ilforge.png")}  (brand)");
+        WriteIco(Path.Combine(dir, "ilforge.ico"), brand, new[] { 16, 32, 48, 64, 128, 256 });
+        Console.WriteLine($"  {Path.Combine(dir, "ilforge.ico")}  (brand, 6 sizes)");
+
+        Console.WriteLine($"generated {langs.Length + 2} icons in {dir}");
         return 0;
     }
 
@@ -99,6 +108,118 @@ internal static class Program
         }
         return px;
     }
+
+    // ---- the product mark: an anvil struck over a forge glow ----
+    static byte[] RenderBrand()
+    {
+        var px = new byte[N * N * 4];
+        void Set(int x, int y, int r, int g, int b)
+        {
+            if ((uint)x >= N || (uint)y >= N) return;
+            int i = (y * N + x) * 4; px[i] = (byte)r; px[i + 1] = (byte)g; px[i + 2] = (byte)b; px[i + 3] = 255;
+        }
+        void Bar(int x0, int x1, int y0, int y1, int r, int g, int b)
+        { for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++) Set(x, y, r, g, b); }
+
+        // dark steel field
+        for (int y = 0; y < N; y++)
+            for (int x = 0; x < N; x++)
+            {
+                int v = 24 + y / 12;                                   // subtle vertical shade
+                Set(x, y, v, v + 2, v + 8);
+            }
+        // forge glow rising from the base
+        for (int y = 0; y < N; y++)
+            for (int x = 0; x < N; x++)
+            {
+                double dx = (x - 128) / 120.0, dy = (y - 206) / 96.0;
+                double d = Math.Sqrt(dx * dx + dy * dy);
+                double t = Math.Max(0, 1 - d);
+                if (t <= 0) continue;
+                t *= t;
+                int i = (y * N + x) * 4;
+                px[i]     = (byte)Math.Min(255, px[i]     + (int)(240 * t));
+                px[i + 1] = (byte)Math.Min(255, px[i + 1] + (int)(120 * t));
+                px[i + 2] = (byte)Math.Min(255, px[i + 2] + (int)( 25 * t));
+            }
+        // border frame
+        for (int t = 0; t < 8; t++)
+            for (int x = t; x < N - t; x++)
+            { Set(x, t, 14, 16, 22); Set(x, N - 1 - t, 14, 16, 22); Set(t, x, 14, 16, 22); Set(N - 1 - t, x, 14, 16, 22); }
+
+        // anvil, light steel with a bright top face
+        int steel = 186, dark = 120, hi = 232;
+        Bar(48, 208, 104, 126, steel, steel + 4, steel + 12);      // top face (body)
+        Bar(48, 208, 104, 110, hi, hi, hi);                        // struck highlight on the face
+        for (int y = 126; y < 158; y++)                            // taper to the waist
+        {
+            int inset = (y - 126) * 5 / 4;
+            Bar(60 + inset, 196 - inset, y, y + 1, dark + 30, dark + 34, dark + 42);
+        }
+        Bar(100, 156, 158, 196, dark + 14, dark + 18, dark + 26);  // waist
+        Bar(70, 186, 196, 220, steel - 20, steel - 16, steel - 8); // base
+        Bar(70, 186, 196, 202, steel + 10, steel + 14, steel + 20);
+        for (int y = 104; y < 126; y++)                            // horn (tapers left)
+        {
+            int h = (126 - y);
+            Bar(48 - h, 48, y, y + 1, steel - 6, steel - 2, steel + 6);
+        }
+        // sparks off the struck face
+        int[] sx = { 66, 92, 128, 168, 196, 112, 150 };
+        int[] sy = { 84, 72, 62, 70, 86, 90, 88 };
+        int[] ss = { 4, 5, 7, 5, 4, 3, 3 };
+        for (int i = 0; i < sx.Length; i++)
+            Bar(sx[i], sx[i] + ss[i], sy[i], sy[i] + ss[i], 255, 214, 120);
+        return px;
+    }
+
+    // box-downsample an N x N RGBA image to size x size
+    static byte[] Downsample(byte[] src, int size)
+    {
+        if (size == N) return src;
+        var dst = new byte[size * size * 4];
+        int block = N / size;
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                int r = 0, g = 0, b = 0, a = 0;
+                for (int by = 0; by < block; by++)
+                    for (int bx = 0; bx < block; bx++)
+                    {
+                        int i = ((y * block + by) * N + (x * block + bx)) * 4;
+                        r += src[i]; g += src[i + 1]; b += src[i + 2]; a += src[i + 3];
+                    }
+                int n = block * block, o = (y * size + x) * 4;
+                dst[o] = (byte)(r / n); dst[o + 1] = (byte)(g / n); dst[o + 2] = (byte)(b / n); dst[o + 3] = (byte)(a / n);
+            }
+        return dst;
+    }
+
+    // ICO container holding PNG-compressed entries (supported since Windows Vista)
+    static void WriteIco(string path, byte[] rgba256, int[] sizes)
+    {
+        var pngs = new List<byte[]>();
+        foreach (int s in sizes) pngs.Add(EncodePng(s, s, Downsample(rgba256, s)));
+        using var fs = File.Create(path);
+        var hdr = new byte[6];
+        hdr[2] = 1; hdr[4] = (byte)sizes.Length; hdr[5] = (byte)(sizes.Length >> 8);
+        fs.Write(hdr);
+        int offset = 6 + 16 * sizes.Length;
+        for (int i = 0; i < sizes.Length; i++)
+        {
+            var e = new byte[16];
+            e[0] = (byte)(sizes[i] >= 256 ? 0 : sizes[i]);       // 0 means 256
+            e[1] = e[0];
+            e[4] = 1;                                             // planes
+            e[6] = 32;                                            // bit count
+            WriteLE(e, 8, pngs[i].Length);
+            WriteLE(e, 12, offset);
+            fs.Write(e);
+            offset += pngs[i].Length;
+        }
+        foreach (var p in pngs) fs.Write(p);
+    }
+    static void WriteLE(byte[] b, int o, int v) { b[o] = (byte)v; b[o + 1] = (byte)(v >> 8); b[o + 2] = (byte)(v >> 16); b[o + 3] = (byte)(v >> 24); }
 
     // ---- minimal 8x8 font (bit 7 = leftmost), only the glyphs the labels use ----
     static byte[] Glyph(char c) => c switch

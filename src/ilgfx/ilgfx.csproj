@@ -6,6 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>ilgfx</AssemblyName>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationIcon>..\..\icons\ilforge.ico</ApplicationIcon>
+    <Product>ILForge</Product>
+    <AssemblyTitle>ILForge Graphics Window</AssemblyTitle>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.2.1" />

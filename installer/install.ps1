@@ -1,38 +1,67 @@
-# install.ps1 — install the dotnetcompilers toolchain for the current user and put the
-# shell on the Start Menu.  Run this from inside the unzipped package:
+# install.ps1 - install ILForge (the polyglot .NET compiler workbench) and put its
+# shells on the Start Menu.  Run this from inside the unzipped package:
 #
-#   powershell -ExecutionPolicy Bypass -File install.ps1 [-Dest <dir>] [-HomeDir <dir>]
+#   powershell -ExecutionPolicy Bypass -File install.ps1 [options]
 #
-#   -Dest      where the toolchain is installed (default %LOCALAPPDATA%\Programs\ildev)
-#   -HomeDir   the shell's home directory (default <Dest>\home). May be any path; it
-#              persists independently of the install and is never overwritten.
+#   -Dest <dir>     install location.
+#                   default: %ProgramFiles%\ILForge  (per-machine; needs elevation)
+#                   use -PerUser for %LOCALAPPDATA%\Programs\ILForge (no elevation)
+#   -HomeDir <dir>  the shell's home directory. Default %LOCALAPPDATA%\ILForge\home.
+#                   It lives outside the install tree, persists across reinstalls, and is
+#                   never overwritten (Program Files is not user-writable, so the home
+#                   must not live there).
+#   -PerUser        install for the current user only, no elevation required.
+#   -NoElevate      do not attempt to self-elevate (fail instead).
 
 param(
-    [string]$Dest = "$env:LOCALAPPDATA\Programs\ildev",
-    [string]$HomeDir = ""
+    [string]$Dest = "",
+    [string]$HomeDir = "",
+    [switch]$PerUser,
+    [switch]$NoElevate
 )
 $ErrorActionPreference = "Stop"
 $src = $PSScriptRoot
-if (-not $HomeDir) { $HomeDir = Join-Path $Dest "home" }
 
-# .NET 10 runtime is required to run the toolchain (SDK only needed to compile new exes).
+if (-not $Dest) {
+    $Dest = if ($PerUser) { "$env:LOCALAPPDATA\Programs\ILForge" } else { "$env:ProgramFiles\ILForge" }
+}
+if (-not $HomeDir) { $HomeDir = "$env:LOCALAPPDATA\ILForge\home" }
+
+function Test-Admin {
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# Installing under Program Files needs elevation; re-launch elevated unless told not to.
+$needsAdmin = $Dest -like "$env:ProgramFiles*" -or $Dest -like "${env:ProgramFiles(x86)}*"
+if ($needsAdmin -and -not (Test-Admin)) {
+    if ($NoElevate) { throw "installing to '$Dest' requires an elevated prompt (or use -PerUser)" }
+    Write-Host "Installing to $Dest requires administrator rights - requesting elevation ..."
+    $a = @("-ExecutionPolicy","Bypass","-File","`"$PSCommandPath`"","-Dest","`"$Dest`"","-HomeDir","`"$HomeDir`"","-NoElevate")
+    $p = Start-Process powershell -ArgumentList $a -Verb RunAs -Wait -PassThru
+    if ($p.ExitCode -ne 0) { throw "the elevated installer failed (exit $($p.ExitCode))" }
+    Write-Host "Elevated install finished."
+    return
+}
+
+# .NET 10 runtime is required to run the toolchain (the SDK is only needed so that cc can
+# stamp native .exe apphosts).
 $rt = & dotnet --list-runtimes 2>$null
 if (-not ($rt -match "Microsoft\.NETCore\.App 10\.")) {
     Write-Warning "The .NET 10 runtime was not detected."
-    Write-Warning "Install it from https://dotnet.microsoft.com/download/dotnet/10.0 (the toolchain needs it to run)."
+    Write-Warning "Install it from https://dotnet.microsoft.com/download/dotnet/10.0 (ILForge needs it to run)."
 }
 
-Write-Host "Installing to $Dest ..."
+Write-Host "Installing ILForge to $Dest ..."
 New-Item -ItemType Directory -Force $Dest | Out-Null
-# copy everything except the installer scripts and the home directory (home persists across
-# reinstalls, so it's never overwritten -- it's seeded separately, only when absent).
+# copy everything except the installer scripts and the seed home
 Get-ChildItem $src -Force | Where-Object { $_.Name -notin @("install.ps1", "uninstall.ps1", "home") } |
     ForEach-Object { Copy-Item $_.FullName -Destination $Dest -Recurse -Force }
 
-# ----- persistent home directory (may live anywhere; never overwritten) -----
+# ----- home directory (outside the install tree; never overwritten) -----
 if (-not (Test-Path $HomeDir)) { New-Item -ItemType Directory -Force $HomeDir | Out-Null; Write-Host "Created home directory: $HomeDir" }
 else { Write-Host "Using existing home directory: $HomeDir" }
-# seed default files (.quicklaunch etc.) only where they're missing -- never clobber the user's
 if (Test-Path (Join-Path $src "home")) {
     Get-ChildItem (Join-Path $src "home") -Force | ForEach-Object {
         $t = Join-Path $HomeDir $_.Name
@@ -40,36 +69,33 @@ if (Test-Path (Join-Path $src "home")) {
     }
 }
 
-# generate .ilshellrc with the installed directory layout, but only if it doesn't exist yet
-# (so the user's edits persist across reinstalls).
+# generate .ilshellrc with the installed layout, only if it does not exist yet
 $rc = Join-Path $HomeDir ".ilshellrc"
 if (-not (Test-Path $rc)) {
-    $profile = [Environment]::GetFolderPath("UserProfile")
+    $prof = [Environment]::GetFolderPath("UserProfile")
     @"
-# IL Shell startup script, generated by the installer.
+# ILForge shell startup script, generated by the installer.
 # Edit freely -- this file persists across reinstalls. Run 'refresh' to reload it.
 # The Start Menu shortcut already enabled the virtual filesystem (--home), so the tree
 # is live; these lines set the mounts to the installed layout (override as you like).
 
-home=$homeDir
+home=$HomeDir
 bin=$Dest\out
 lib=$Dest\out
 include=$Dest\include
 etc=$Dest\etc
 tmp=$Dest\tmp
-windows=$profile
+windows=$prof
 
 alias ll='ls -al'
 alias la='ls -a'
-echo "IL Shell ready.  'vfs status' shows the layout; 'refresh' reloads this file."
+echo "ILForge ready.  'vfs status' shows the layout; 'refresh' reloads this file."
 "@ | Set-Content -Path $rc -Encoding ASCII
     Write-Host "Wrote $rc"
 }
 else {
-    # A kept .ilshellrc may have been written for a different install location (e.g. the
-    # toolchain was reinstalled elsewhere). Rebase the install-relative mount lines
-    # (bin/lib/include/etc/tmp) to this install dir, preserving home (independent), aliases,
-    # and every other edit. The old install dir is read from the bin= line. No-op if matched.
+    # A kept .ilshellrc may name a previous install location. Rebase the install-relative
+    # mounts (bin/lib/include/etc/tmp), preserving home, aliases and every other edit.
     $lines = @(Get-Content $rc)
     $oldInstall = $null
     foreach ($l in $lines) { if ($l -match '^\s*bin\s*=\s*(.+?)\s*$') { $oldInstall = (Split-Path $matches[1] -Parent); break } }
@@ -87,43 +113,48 @@ else {
             }
             if ($changed) {
                 Set-Content -Path $rc -Value $lines -Encoding ASCII
-                Write-Host "Rebased .ilshellrc mount paths ($oldInstall -> $Dest); your aliases were kept."
+                Write-Host "Rebased .ilshellrc mount paths ($oldInstall -> $Dest); your edits were kept."
             }
         }
     }
 }
 
-$ilterm = Join-Path $Dest "src\ilterm\bin\Release\net10.0\ilterm.exe"
-$ilshDll = Join-Path $Dest "out\ilsh.dll"
+$ilterm  = Join-Path $Dest "src\ilterm\bin\Release\net10.0\ilterm.exe"
 $ilshell = Join-Path $Dest "src\ilshell\bin\Release\net10.0\ilshell.exe"
+$ilshDll = Join-Path $Dest "out\ilsh.dll"
+$devcmd  = Join-Path $Dest "ilforge-cmd.bat"
+$icon    = Join-Path $Dest "icons\ilforge.ico"
 if (-not (Test-Path $ilterm))  { throw "ilterm.exe missing in package ($ilterm) - was the package built fully?" }
 if (-not (Test-Path $ilshDll)) { throw "out\ilsh.dll missing in package" }
 
-$programs = [Environment]::GetFolderPath("Programs")          # per-user Start Menu\Programs
+# Start Menu: all-users when elevated, else per-user
+$menuRoot = if ((Test-Admin) -and (-not $PerUser)) { [Environment]::GetFolderPath("CommonPrograms") } else { [Environment]::GetFolderPath("Programs") }
+$group = Join-Path $menuRoot "ILForge"
+New-Item -ItemType Directory -Force $group | Out-Null
 $ws = New-Object -ComObject WScript.Shell
+$homeArg = '"' + $ilshDll + '" --home "' + $HomeDir + '"'
 
-# the shortcut launches in the persistent home directory (virtual filesystem on)
-$homeArg = '"' + $ilshDll + '" --home "' + $homeDir + '"'
-
-# primary: the windowed terminal (color, fonts, right-click menu)
-$lnk = $ws.CreateShortcut((Join-Path $programs "IL Shell.lnk"))
-$lnk.TargetPath = $ilterm
-$lnk.Arguments = $homeArg
-$lnk.WorkingDirectory = $Dest
-$lnk.Description = "IL Shell - the dotnetcompilers toolchain (windowed terminal)"
-$lnk.Save()
-
-# secondary: the plain console shell
-if (Test-Path $ilshell) {
-    $lnk2 = $ws.CreateShortcut((Join-Path $programs "IL Shell (console).lnk"))
-    $lnk2.TargetPath = $ilshell
-    $lnk2.Arguments = $homeArg
-    $lnk2.WorkingDirectory = $Dest
-    $lnk2.Description = "IL Shell in a console window"
-    $lnk2.Save()
+# NB: the parameter must not be called $args -- that is an automatic PowerShell variable,
+# and binding it silently loses the value (the shortcuts then get no arguments at all).
+function Shortcut($name, $target, $cmdline, $desc, $workdir) {
+    $l = $ws.CreateShortcut((Join-Path $group "$name.lnk"))
+    $l.TargetPath = $target
+    if ($cmdline) { $l.Arguments = $cmdline }
+    $l.WorkingDirectory = $workdir
+    $l.Description = $desc
+    if (Test-Path $icon) { $l.IconLocation = "$icon,0" }
+    $l.Save()
+    Write-Host "  shortcut: $name"
 }
 
+Shortcut "ILForge Shell" $ilterm $homeArg "ILForge Shell - windowed terminal (color, fonts, menu)" $HomeDir
+Shortcut "ILForge Shell (console)" $ilshell $homeArg "ILForge Shell in a console window" $HomeDir
+Shortcut "ILForge Developer Command Prompt" "$env:ComSpec" "/k `"$devcmd`" `"$HomeDir`"" "Windows console with the whole ILForge toolchain on PATH" $HomeDir
+Shortcut "ILForge Documentation" (Join-Path $Dest "docs") "" "ILForge language and toolchain documentation" $Dest
+
 Write-Host ""
-Write-Host "Installed to:        $Dest"
-Write-Host "Start Menu shortcut: $(Join-Path $programs 'IL Shell.lnk')"
-Write-Host "Search the Start Menu for 'IL Shell' to launch it."
+Write-Host "ILForge installed."
+Write-Host "  toolchain : $Dest"
+Write-Host "  home      : $HomeDir"
+Write-Host "  Start Menu: $group"
+Write-Host "Search the Start Menu for 'ILForge'."
