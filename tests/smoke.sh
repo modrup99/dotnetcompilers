@@ -5,10 +5,15 @@
 #
 #   bash tests/smoke.sh            (expects the toolchain already built: bash build_all.sh)
 #
+# To check an *installed* copy instead of this working tree -- which catches packaging gaps
+# a repo-only run cannot see, such as a helper the installer forgot to stage:
+#
+#   ILFORGE_ROOT="C:\Program Files\ILForge" bash tests/smoke.sh
+#
 # Exit code 0 = all languages pass.
 
 cd "$(dirname "$0")/.."
-ROOT="$(pwd)"
+ROOT="${ILFORGE_ROOT:-$(pwd)}"
 CC="dotnet $ROOT/src/Cc/bin/Release/net10.0/cc.dll"
 W="$(mktemp -d)"
 pass=0; fail=0; failed=""

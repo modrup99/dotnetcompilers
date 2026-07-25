@@ -1,4 +1,4 @@
-# build_dist.ps1 — assemble a relocatable distribution of the dotnetcompilers toolchain.
+# build_dist.ps1 - assemble a relocatable distribution of ILForge.
 #
 #   powershell -ExecutionPolicy Bypass -File installer\build_dist.ps1 [-Build] [-Zip]
 #
@@ -49,9 +49,11 @@ StageDir  "src\Cc\bin\Release\net10.0"
 StageDir  "src\ilshell\bin\Release\net10.0"
 StageDir  "src\ilterm\bin\Release\net10.0"
 StageDir  "src\ilgfx\bin\Release\net10.0"
+StageDir  "src\CoilAsm\bin\Release\net10.0"        # coilfe shells out to coilasm.exe
 StageDir  "icons"                                  # brand + per-language exe icons (cc embeds these)
 StageDir  "docs"                                   # the manual: languages, lex/yacc guide, PDFs
 StageDir  "examples"                               # worked examples (incl. lex/yacc calc + minishell)
+StageDir  "tests"                                  # smoke.sh, to verify an installation
 
 # language reference docs (so `man <lang>` works) + sample config
 Get-ChildItem $repo -Directory | Where-Object { $_.Name -notin @("dist","installer","src",".git") } | ForEach-Object {
@@ -69,6 +71,29 @@ Write-Host "  staged home (seed)"
 # the per-machine installer + uninstaller travel inside the package
 Copy-Item "$PSScriptRoot\install.ps1"   $dest -Force
 Copy-Item "$PSScriptRoot\uninstall.ps1" $dest -Force
+
+# Completeness check. A tool that shells out to another (coilfe -> coilasm, every language
+# driver -> cc) is only as good as the package: a missing helper fails at run time in the
+# installed copy while working perfectly in the repo. Assert the whole set is present.
+$required = @(
+    "build_all.sh", "ilforge-cmd.bat",
+    "out\ilsh.dll", "out\CRuntime.dll",
+    "out\pascal.exe", "out\oberon.exe", "out\tcpp.exe", "out\qbasic.exe", "out\forth.exe",
+    "out\fortran.exe", "out\cobol.exe", "out\ada.exe", "out\smalltalk.exe", "out\lua.exe",
+    "out\awk.exe", "out\coilfe.exe", "out\logo.exe", "out\lisp.exe", "out\prolog.exe", "out\bc.exe",
+    "src\Cc\bin\Release\net10.0\cc.exe",
+    "src\CoilAsm\bin\Release\net10.0\coilasm.exe",
+    "src\ilshell\bin\Release\net10.0\ilshell.exe",
+    "src\ilterm\bin\Release\net10.0\ilterm.exe",
+    "icons\ilforge.ico", "docs\README.md", "docs\LANGUAGES.md", "docs\lex-yacc.md"
+)
+$missing = $required | Where-Object { -not (Test-Path (Join-Path $dest $_)) }
+if ($missing) {
+    Write-Host "INCOMPLETE PACKAGE - missing:" -ForegroundColor Red
+    $missing | ForEach-Object { Write-Host "   $_" -ForegroundColor Red }
+    throw "the staged distribution is missing $($missing.Count) required file(s); build the toolchain first (build_dist.ps1 -Build)"
+}
+Write-Host "  completeness check: all $($required.Count) required files present"
 
 $bytes = (Get-ChildItem $dest -Recurse -File | Measure-Object Length -Sum).Sum
 Write-Host ("Distribution staged at {0} ({1:N1} MB)" -f $dest, ($bytes / 1MB))
