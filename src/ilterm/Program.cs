@@ -81,7 +81,7 @@ internal sealed class TerminalControl : Control
     private readonly IBrush[] _bgBrush = new IBrush[16];
 
     private string _fontFamily = "Cascadia Mono, Consolas, Menlo, monospace";
-    private double _fontSize = 15;
+    private double _fontSize = 10;      // ~100 columns in the default window; Font menu overrides
     private Typeface _tf;
     private double _cw, _ch;
 
@@ -93,6 +93,7 @@ internal sealed class TerminalControl : Control
     {
         Focusable = true;
         for (int i = 0; i < 16; i++) { _fgBrush[i] = new SolidColorBrush(Palette[i]); _bgBrush[i] = new SolidColorBrush(Palette[i]); }
+        LoadFontPrefs();                  // a previous Font-menu choice wins over the default
         SetFont(_fontFamily, _fontSize);
 
         CRuntime.HostOut = b => { lock (_grid) _grid.Process(b); };
@@ -117,9 +118,15 @@ internal sealed class TerminalControl : Control
         };
 
         ContextMenu = BuildMenu();
+
+        // Take the keyboard as soon as the window opens: without this, typing goes nowhere
+        // until the user happens to click inside the terminal.
+        AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() => Focus());
     }
 
-    private void SetFont(string family, double size)
+    private void SetFont(string family, double size) => SetFont(family, size, true);
+
+    private void SetFont(string family, double size, bool remember)
     {
         _fontFamily = family; _fontSize = size;
         _tf = new Typeface(family);
@@ -131,6 +138,42 @@ internal sealed class TerminalControl : Control
             int r = Math.Max(6, (int)(Bounds.Height / _ch));
             lock (_grid) _grid.Resize(c, r);
         }
+        if (remember) SaveFontPrefs();
+    }
+
+    // The Font menu's choice persists, in the home directory beside .ilshellrc, so it
+    // survives a restart instead of reverting to the default on every launch.
+    private string PrefsPath() => System.IO.Path.Combine(Shell.HomeDir(), ".ilterm");
+
+    private void LoadFontPrefs()
+    {
+        try
+        {
+            string p = PrefsPath();
+            if (!File.Exists(p)) return;
+            foreach (var raw in File.ReadAllLines(p))
+            {
+                var line = raw.Trim();
+                int eq = line.IndexOf('=');
+                if (line.Length == 0 || line.StartsWith("#") || eq <= 0) continue;
+                string k = line.Substring(0, eq).Trim(), v = line.Substring(eq + 1).Trim();
+                if (k == "font" && v.Length > 0) _fontFamily = v;
+                else if (k == "size" && double.TryParse(v, System.Globalization.CultureInfo.InvariantCulture, out var s) && s >= 6 && s <= 40) _fontSize = s;
+            }
+        }
+        catch { }        // an unreadable prefs file just means the defaults
+    }
+
+    private void SaveFontPrefs()
+    {
+        try
+        {
+            File.WriteAllText(PrefsPath(),
+                "# ILForge Shell appearance (written by the Font menu)\n" +
+                $"font={_fontFamily}\n" +
+                $"size={_fontSize.ToString(System.Globalization.CultureInfo.InvariantCulture)}\n");
+        }
+        catch { }
     }
 
     private ContextMenu BuildMenu()
