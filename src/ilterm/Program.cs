@@ -98,6 +98,7 @@ internal sealed class TerminalControl : Control
 
         CRuntime.HostOut = b => { lock (_grid) _grid.Process(b); };
         CRuntime.HostKey = () => _keys.Take();
+        CRuntime.HostKeyTimed = ms => _keys.TryTake(out var k, ms) ? k : -1;   // for child processes
         CRuntime.HostCols = () => _grid.Cols;
         CRuntime.HostRows = () => _grid.Rows;
         CRuntime.HostClear = () => { lock (_grid) _grid.Process(new byte[] { 27, (byte)'[', (byte)'2', (byte)'J' }); };

@@ -463,20 +463,89 @@ public static class CRuntime
         for (int k = 0; k < argc; k++) a.Add(ReadCStr(LdI32(argv + k * 4)));
         if (a.Count == 0) return 0;
         var snk = CurSink();
-        var psi = new ProcessStartInfo { FileName = ResolveExe(a[0]), UseShellExecute = false, RedirectStandardOutput = snk != null, RedirectStandardInput = _pIn || _rIn != null };
+        // Under a windowed host (ilterm) the shell has no console of its own, so a child
+        // left to inherit would be given a brand-new console window by Windows: compilers
+        // flashed up a black window and a REPL opened in a separate one. In that case take
+        // over all three streams and pump them through the host's terminal instead.
+        bool gui = HostMode;
+        var psi = new ProcessStartInfo
+        {
+            FileName = ResolveExe(a[0]), UseShellExecute = false,
+            RedirectStandardOutput = snk != null || gui,
+            RedirectStandardError = gui,
+            RedirectStandardInput = _pIn || _rIn != null || gui,
+            CreateNoWindow = gui,
+        };
         for (int k = 1; k < a.Count; k++) psi.ArgumentList.Add(a[k]);
         foreach (var kv in _exports) psi.Environment[kv.Key] = kv.Value;
         Process pr;
         try { pr = Process.Start(psi); }
         catch { WriteBytes(3, Encoding.Latin1.GetBytes(a[0] + ": command not found\n")); return 127; }
-        if (psi.RedirectStandardInput)
+
+        bool haveInputData = _pIn || _rIn != null;
+        if (haveInputData)
         {
             byte[] inp = _pIn ? _pData : File.ReadAllBytes(_rIn);
             pr.StandardInput.BaseStream.Write(inp, 0, inp.Length); pr.StandardInput.Close();
         }
-        if (snk != null) pr.StandardOutput.BaseStream.CopyTo(snk);
+
+        if (snk != null)
+        {
+            pr.StandardOutput.BaseStream.CopyTo(snk);          // piped/redirected: collect it
+            if (gui) PumpToHost(pr.StandardError.BaseStream, 3);
+        }
+        else if (gui)
+        {
+            // stream both, so a long compile shows progress rather than arriving at the end
+            var tOut = PumpAsync(pr.StandardOutput.BaseStream, 2);
+            var tErr = PumpAsync(pr.StandardError.BaseStream, 3);
+            if (!haveInputData) ForwardKeysWhileRunning(pr);    // keeps REPLs interactive
+            tOut.Join(); tErr.Join();
+        }
         pr.WaitForExit();
         return pr.ExitCode;
+    }
+
+    // copy a child stream into the host terminal (handle 2 = stdout, 3 = stderr)
+    private static void PumpToHost(Stream s, int handle)
+    {
+        var buf = new byte[4096];
+        int n;
+        try { while ((n = s.Read(buf, 0, buf.Length)) > 0) WriteBytes(handle, buf.AsSpan(0, n).ToArray()); }
+        catch { }
+    }
+    private static Thread PumpAsync(Stream s, int handle)
+    {
+        var t = new Thread(() => PumpToHost(s, handle)) { IsBackground = true };
+        t.Start();
+        return t;
+    }
+
+    // While a child runs, hand it the keys the host collects, so interactive programs (the
+    // Lisp/bc/Logo REPLs, `more`, `vi`) still work inside the windowed terminal. The wait is
+    // polled rather than blocking, so the forwarder cannot swallow a keystroke meant for the
+    // shell once the child has exited.
+    private static void ForwardKeysWhileRunning(Process pr)
+    {
+        var t = new Thread(() =>
+        {
+            try
+            {
+                var outStream = pr.StandardInput.BaseStream;
+                while (!pr.HasExited)
+                {
+                    int k = HostKeyTimed != null ? HostKeyTimed(50) : -1;
+                    if (k == -1) { if (HostKeyTimed == null) Thread.Sleep(50); continue; }
+                    if (k == 13) { outStream.WriteByte((byte)'\r'); outStream.WriteByte((byte)'\n'); }
+                    else if (k == 8) outStream.WriteByte(8);
+                    else if (k >= 32 && k < 127) outStream.WriteByte((byte)k);
+                    else continue;
+                    outStream.Flush();
+                }
+            }
+            catch { }
+        }) { IsBackground = true };
+        t.Start();
     }
 
     private static readonly List<Process> _jobs = new();
@@ -600,6 +669,7 @@ public static class CRuntime
     public static Action HostClear;
     public static Action<int, int> HostGoto;
     public static Action HostReloadMenu;      // ask the GUI host to rebuild its context menu
+    public static Func<int, int> HostKeyTimed;// next key, or -1 if none within the given ms
     public static bool HostMode => HostOut != null;
     public static int rt_reloadmenu() { HostReloadMenu?.Invoke(); return 0; }
 
