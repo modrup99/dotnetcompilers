@@ -116,8 +116,9 @@ text.
 ## Notes
 
 - **Case-insensitive** throughout: `WriteLn`, `writeln`, and `WRITELN` are one identifier.
-- `=` is equality, `<>` inequality, `:=` assignment; `div` is integer division, `/` always
-  yields a real.
+- `=` is equality, `<>` inequality, `:=` assignment; `div` is integer division, `mod` the
+  remainder (truncated, as in Turbo Pascal: `-7 mod 3` is `-1`), and `/` always yields a
+  real.
 - `and`, `or`, `not` are boolean on booleans and bitwise on integers.
 - Comments come in three forms: `{ … }`, `(* … *)`, and `//` to end of line.
 - String comparison uses `strcmp`, so `<` and `>` order strings lexicographically.
@@ -128,10 +129,6 @@ text.
 
 A broad Turbo-Pascal core, with these honest gaps and defects:
 
-- **`mod` does not compile.** `a mod b` emits malformed C and `cc` rejects the file (a
-  format-string escaping bug in the emitter). Write `a - (a div b) * b`, or use `odd(x)`
-  for the common parity test.
-- **`round(x)` crashes the compiler.** Use `trunc(x + 0.5)`.
 - **`forward` produces an empty stub**, so mutual recursion between two procedures does
   not work — the forward declaration's empty body is what runs.
 - **No nested procedures or functions.** A subprogram's local declarations are limited to
@@ -627,5 +624,5 @@ signatures, and splices the implementation in ahead of the program body — whol
 inlining rather than separate compilation. `assign`/`rewrite`/`close` write the file,
 `assign`/`reset`/`readln`/`eof`/`close` read it back a line at a time.
 
-From here the natural extensions are `mod` and `round` (both currently broken — see
-*Subset boundaries*), nested procedures, and real separate compilation of units.
+From here the natural extensions are nested procedures, working `forward` declarations,
+and real separate compilation of units (see *Subset boundaries*).

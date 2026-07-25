@@ -126,7 +126,8 @@ None. Activity 8 draws a chart with text.
 - **Case-sensitive**, keywords **UPPERCASE**: `begin` is an identifier, `BEGIN` is a
   keyword.
 - `#` and `<>` both mean "not equal"; `&` is `AND`, `~` is `NOT`.
-- `DIV` is integer division; `/` always yields a `REAL`.
+- `DIV` is integer division and `MOD` the remainder (truncated: `-7 MOD 3` is `-1`);
+  `/` always yields a `REAL`.
 - Comments are `(* … *)` and nest properly. String literals have **no escape sequences** —
   a `\"` inside `"…"` will not parse.
 - Every block closes with `END`, and a `MODULE`/`PROCEDURE` repeats its own name after
@@ -141,11 +142,6 @@ A working Wirth-family core — modules, structured types, the full statement se
 Oberon-2's record extension with virtual type-bound procedures — with these honest gaps
 and defects:
 
-- **`MOD` does not compile.** `a MOD b` emits malformed C and `cc` rejects the file (a
-  format-string escaping bug in the emitter). Write `a - (a DIV b) * b`, or use `ODD(x)`
-  for the common parity test.
-- **A negative `BY` never executes.** The emitted loop test is always `<=`, so
-  `FOR i := 10 TO 1 BY -1` runs zero times. Count up and subtract from the bound instead.
 - **No string variables.** Only string *literals* and string *constants* (`CONST Name =
   "Oberon"`) are text; `+`, `=`, `<`, `LEN` and `Out.String` work on those. An
   `ARRAY n OF CHAR` is a genuine character array: `s := "hello"` compiles but produces
@@ -325,8 +321,8 @@ many  case other
 ```
 
 Every compound statement is bracketed by its keyword and `END`, so no `BEGIN`/`END` pairs
-are needed inside `IF` or `WHILE`. `BY` sets the step (positive only — see *Subset
-boundaries*). `LOOP`/`EXIT` is the unconditional loop with a mid-body exit. `CASE` arms are
+are needed inside `IF` or `WHILE`. `BY` sets the step, and may be negative to count down
+(`FOR i := 10 TO 1 BY -1`). `LOOP`/`EXIT` is the unconditional loop with a mid-body exit. `CASE` arms are
 separated by `|`, and `ELSE` is the catch-all.
 
 ### 4. Structured types — arrays, records and sets
@@ -599,6 +595,5 @@ it calls is resolved through the vtable that `NEW` installed, so the most-derive
 implementation runs. That is the whole of Oberon-2's polymorphism: extension plus
 type-bound procedures, no `class` keyword required.
 
-From here the natural extensions are `MOD` and a downward `FOR` (both currently broken —
-see *Subset boundaries*), real string variables, and separate compilation of modules with
-`DEFINITION`/`IMPLEMENTATION` parts.
+From here the natural extensions are real string variables and separate compilation of
+modules with `DEFINITION`/`IMPLEMENTATION` parts (see *Subset boundaries*).

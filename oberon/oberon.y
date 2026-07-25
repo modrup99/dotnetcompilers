@@ -162,7 +162,9 @@ char *param_text(char *list, int type, int isvar)
     return acc;
 }
 
-int bin(int a, char *op, int b, int t) { return mkE(F2(j3("(%s ", op, " %s)"), etext(a), etext(b)), t); }
+/* Build "(lhs op rhs)" by concatenation, NOT by interpolating `op` into a format string:
+ * MOD emits the operator "%", which sprintf would read as a conversion specifier. */
+int bin(int a, char *op, int b, int t) { return mkE(j3("(", etext(a), j3(" ", op, j3(" ", etext(b), ")"))), t); }
 int arith(int a, char *op, int b) { int t = (is_real(etype(a)) || is_real(etype(b))) ? T_REAL : T_INT; return bin(a, op, b, t); }
 int logic(int a, char *op, int b) { return bin(a, op, b, T_BOOL); }
 int rel(int a, char *op, char *sop, int b)
@@ -447,7 +449,9 @@ reph      : KREPEAT  { e("do {\n"); } ;
 
 for_stmt  : forh stmt_seq KEND  { e("}\n"); } ;
 forh      : KFOR IDENT ASSIGN expr KTO expr forby KDO
-            { char *v = cname((char *)$2); e("for ("); e(v); e(" = "); e(etext($4)); e("; "); e(v); e(" <= "); e(etext($6)); e("; "); e(v); e(g_byneg ? " -= " : " += "); e(g_bystep); e(") {\n"); } ;
+            /* the test must follow the step's direction: a negative BY counts down, so it
+             * terminates on >=, not <= (which would never execute the body at all) */
+            { char *v = cname((char *)$2); e("for ("); e(v); e(" = "); e(etext($4)); e("; "); e(v); e(g_byneg ? " >= " : " <= "); e(etext($6)); e("; "); e(v); e(g_byneg ? " -= " : " += "); e(g_bystep); e(") {\n"); } ;
 forby     : /* empty */  { g_bystep = "1"; g_byneg = 0; }
           | KBY INTLIT   { g_bystep = istr($2); g_byneg = 0; }
           | KBY '-' INTLIT { g_bystep = istr($3); g_byneg = 1; } ;

@@ -187,7 +187,9 @@ char *param_text(char *list, int type, int isvar)
 }
 
 /* --- expression helpers --- */
-int bin(int a, char *op, int b, int t) { return mkE(F2(j3("(%s ", op, " %s)"), etext(a), etext(b)), t); }
+/* Build "(lhs op rhs)" by concatenation, NOT by interpolating `op` into a format string:
+ * `mod` emits the operator "%", which sprintf would read as a conversion specifier. */
+int bin(int a, char *op, int b, int t) { return mkE(j3("(", etext(a), j3(" ", op, j3(" ", etext(b), ")"))), t); }
 int arith(int a, char *op, int b) { int t = (is_real(etype(a)) || is_real(etype(b))) ? T_REAL : T_INT; return bin(a, op, b, t); }
 int logic(int a, char *bop, char *iop, int b) { int bo = (eff(etype(a)) == T_BOOL); return bin(a, bo ? bop : iop, b, bo ? T_BOOL : T_INT); }
 int rel(int a, char *op, char *sop, int b)     /* strings compare via strcmp */
@@ -279,7 +281,9 @@ int std_func(char *name, int args)
     if (strcmp(name, "cos") == 0)  return mkE(F1("cos(%s)", x), T_REAL);
     if (strcmp(name, "exp") == 0)  return mkE(F1("exp(%s)", x), T_REAL);
     if (strcmp(name, "ln") == 0)   return mkE(F1("log(%s)", x), T_REAL);
-    if (strcmp(name, "round") == 0) return mkE(F1("((int)((%s)<0?(%s)-0.5:(%s)+0.5))", x), T_INT);
+    /* via a helper, so the argument is evaluated once (and the format takes one %s:
+     * a three-%s format with one argument used to crash the compiler in sprintf) */
+    if (strcmp(name, "round") == 0) return mkE(F1("__pround(%s)", x), T_INT);
     if (strcmp(name, "trunc") == 0) return mkE(F1("((int)(%s))", x), T_INT);
     if (strcmp(name, "odd") == 0)  return mkE(F1("(((%s)&1)!=0)", x), T_BOOL);
     if (strcmp(name, "succ") == 0) return mkE(F1("((%s)+1)", x), etype(e1));
@@ -482,7 +486,8 @@ void add_fields(char *list, int type)
 program   : KPROGRAM IDENT ';' phead decl_list mainhdr compound '.'  { e("\nreturn 0;\n}\n"); } ;
 phead     : /* empty */  { e("char *__pscat(char*a,char*b){char*r=(char*)malloc(strlen(a)+strlen(b)+1);strcpy(r,a);strcat(r,b);return r;}\n");
                            e("char *__pcopy(char*s,int i,int n){char*r=(char*)malloc(n+1);int k=0;int L=strlen(s);while(k<n&&(i-1+k)<L){r[k]=s[i-1+k];k++;}r[k]=0;return r;}\n");
-                           e("int __ppos(char*sub,char*s){int i=0;int sl=strlen(s);int bl=strlen(sub);while(i+bl<=sl){int j=0;while(j<bl&&s[i+j]==sub[j])j++;if(j==bl)return i+1;i++;}return 0;}\n"); } ;
+                           e("int __ppos(char*sub,char*s){int i=0;int sl=strlen(s);int bl=strlen(sub);while(i+bl<=sl){int j=0;while(j<bl&&s[i+j]==sub[j])j++;if(j==bl)return i+1;i++;}return 0;}\n");
+                           e("int __pround(double v){return (int)(v<0?v-0.5:v+0.5);}\n"); } ;
 mainhdr   : /* empty */  { e("\nint main(void){\n"); } ;
 
 decl_list : /* empty */ | decl_list decl ;
