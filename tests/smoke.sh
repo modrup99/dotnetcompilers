@@ -251,6 +251,28 @@ check prolog "ann" "$ROOT/out/prolog.exe" "$W/t.pl"
 
 check bc "42" "$ROOT/out/bc.exe" "6*7"
 
+# ---- lex + yacc themselves: build the calc example from its .l and .y and run it.
+#      This is the only check that exercises the compiler-compilers (and it caught them
+#      being missing from an installed copy while every language still worked). ----
+if [[ -f "$ROOT/examples/lexyacc/calc/calc.y" ]]; then
+    if dotnet "$ROOT/yacc/yacc.dll" < "$ROOT/examples/lexyacc/calc/calc.y" > "$W/calc_parse.c" 2>"$W/y.err" &&
+       dotnet "$ROOT/lex/lex.dll"   < "$ROOT/examples/lexyacc/calc/calc.l" > "$W/calc_scan.c" 2>>"$W/y.err" &&
+       cat "$W/calc_parse.c" "$W/calc_scan.c" > "$W/calc_src.c" &&
+       dotnet "$ROOT/src/Cc/bin/Release/net10.0/cc.dll" "$W/calc_src.c" -o "$W/calc.exe" --exe >/dev/null 2>&1 &&
+       [[ -f "$W/calc.exe" ]]; then
+        got=$(printf '1+2*3\nx=10\nx*4+2\n' | "$W/calc.exe" 2>&1 | tr '\n' ' ')
+        if [[ "$got" == *"7"* && "$got" == *"42"* ]]; then pass=$((pass+1)); printf '  ok    %-11s %s\n' lex+yacc "$got"
+        else fail=$((fail+1)); failed="$failed lex+yacc"; printf '  FAIL  %-11s got %q\n' lex+yacc "$got"; fi
+    else
+        fail=$((fail+1)); failed="$failed lex+yacc"
+        echo "  FAIL  lex+yacc    generator failed: $(head -1 "$W/y.err" 2>/dev/null)"
+        [[ -f "$ROOT/yacc/yacc.dll" ]] || echo "          yacc/yacc.dll is missing from $ROOT"
+        [[ -f "$ROOT/lex/lex.dll" ]]   || echo "          lex/lex.dll is missing from $ROOT"
+    fi
+else
+    fail=$((fail+1)); failed="$failed lex+yacc"; echo "  FAIL  lex+yacc    examples/lexyacc/calc is missing from $ROOT"
+fi
+
 # ---- the shell ----
 got=$(printf 'echo sh=$((6*7))\nbc "1+1"\n' | "$ROOT/out/ilsh.exe" 2>&1)
 if [[ "$got" == *"sh=42"* ]]; then pass=$((pass+1)); printf '  ok    %-11s %s\n' ilsh "$(echo "$got" | head -1)"

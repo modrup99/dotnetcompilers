@@ -16,11 +16,14 @@ vfs on
 # can lay out the tree however you like and repoint anything on the fly.
 # Defaults point /bin and /lib at the toolchain's out/ folder; override freely:
 #
-#   bin=C:\claude\dotnetcomp\out
-#   lib=C:\claude\dotnetcomp\out
-#   include=C:\myproject\include
-#   etc=C:\claude\dotnetcomp\etc
-#   tmp=C:\Temp
+#   bin='C:\claude\dotnetcomp\out'
+#   lib='C:\claude\dotnetcomp\out'
+#   include='C:\myproject\include'
+#   etc='C:\claude\dotnetcomp\etc'
+#   tmp='C:\Temp'
+#
+# Quote the value if the path contains a space (C:\Program Files\...): like sh, an
+# unquoted assignment is split at whitespace.
 #
 # Several virtual folders may point at the same real folder if you wish.
 

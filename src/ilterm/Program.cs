@@ -59,7 +59,7 @@ internal sealed class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime d)
-            d.MainWindow = new Window { Title = "ilterm", Width = 760, Height = 460, Content = new TerminalControl() };
+            d.MainWindow = new Window { Title = "ILForge Shell", Width = 860, Height = 520, Content = new TerminalControl() };
         base.OnFrameworkInitializationCompleted();
     }
 }

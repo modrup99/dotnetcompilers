@@ -34,7 +34,7 @@ int sc_kw(int tok)  /* a reserved word matched: keyword here, or fall back to WO
 int sc_sep(int tok) { sc_cmd = 1; sc_fname = 0; sc_needin = 0; return tok; }  /* command separator */
 %}
 %%
-[ \t]+          { }
+[ \t\r]+        { }
 "#"[^\n]*       { }
 "\n"            { return sc_sep(';'); }
 "&&"            { return sc_sep(AND_IF); }
@@ -50,7 +50,7 @@ int sc_sep(int tok) { sc_cmd = 1; sc_fname = 0; sc_needin = 0; return tok; }  /*
 "done"          { return sc_kw(DONE); }
 "for"           { return sc_kw(FOR); }
 "in"            { return sc_kw(IN); }
-([^ \t\n;|&<>()#\"']|\"[^\"]*\"|'[^']*'|\$\(\(([^()]|\([^()]*\))*\)\)|\$\([^)]*\)|`[^`]*`)+   { return sc_word(); }
+([^ \t\r\n;|&<>()#\"']|\"[^\"]*\"|'[^']*'|\$\(\(([^()]|\([^()]*\))*\)\)|\$\([^)]*\)|`[^`]*`)+   { return sc_word(); }
 "|"             { return sc_sep('|'); }
 ";"             { return sc_sep(';'); }
 "&"             { return sc_sep('&'); }

@@ -41,15 +41,35 @@ StageFile "build-all.bat"
 StageFile "README.md"
 StageFile "ilforge-cmd.bat"
 
-# the compilers/tools, the C compiler, and the launchers (with all their deps)
-StageDir  "out"
-# drop generated intermediates that aren't needed at runtime (parser/scanner C, etc.)
-Get-ChildItem (Join-Path $dest "out") -Filter *.c -File -ErrorAction SilentlyContinue | Remove-Item -Force
+# out\ is the dev build directory: besides the toolchain it accumulates every test program
+# ever compiled there (hundreds of stray .exe/.dll/.pdb). Stage the tools by name instead of
+# copying the folder, so the package contains the toolchain and nothing else.
+$tools = @("pascal", "oberon", "tcpp", "qbasic", "forth", "fortran", "cobol", "ada",
+           "smalltalk", "lua", "awk", "coilfe", "logo", "lisp", "prolog", "bc",
+           "ilsh", "xeyes")
+$outSrc = Join-Path $repo "out"
+$outDst = Join-Path $dest "out"
+New-Item -ItemType Directory -Force $outDst | Out-Null
+$staged = 0
+foreach ($t in $tools) {
+    foreach ($ext in @(".exe", ".dll", ".pdb", ".runtimeconfig.json")) {
+        $f = Join-Path $outSrc ($t + $ext)
+        if (Test-Path $f) { Copy-Item $f $outDst -Force; $staged++ }
+    }
+}
+foreach ($extra in @("CRuntime.dll")) {
+    $f = Join-Path $outSrc $extra
+    if (Test-Path $f) { Copy-Item $f $outDst -Force; $staged++ }
+}
+Write-Host "  staged out ($staged files: $($tools.Count) tools + the runtime, not the dev build litter)"
+
 StageDir  "src\Cc\bin\Release\net10.0"
 StageDir  "src\ilshell\bin\Release\net10.0"
 StageDir  "src\ilterm\bin\Release\net10.0"
 StageDir  "src\ilgfx\bin\Release\net10.0"
 StageDir  "src\CoilAsm\bin\Release\net10.0"        # coilfe shells out to coilasm.exe
+StageDir  "lex"                                    # lex + yacc themselves: on the dev
+StageDir  "yacc"                                   # prompt's PATH, and docs\lex-yacc.md
 StageDir  "icons"                                  # brand + per-language exe icons (cc embeds these)
 StageDir  "docs"                                   # the manual: languages, lex/yacc guide, PDFs
 StageDir  "examples"                               # worked examples (incl. lex/yacc calc + minishell)
@@ -83,6 +103,8 @@ $required = @(
     "out\awk.exe", "out\coilfe.exe", "out\logo.exe", "out\lisp.exe", "out\prolog.exe", "out\bc.exe",
     "src\Cc\bin\Release\net10.0\cc.exe",
     "src\CoilAsm\bin\Release\net10.0\coilasm.exe",
+    "lex\lex.dll", "lex\lex.exe", "yacc\yacc.dll", "yacc\yacc.exe",
+    "examples\lexyacc\calc\calc.l", "examples\lexyacc\calc\calc.y",
     "src\ilshell\bin\Release\net10.0\ilshell.exe",
     "src\ilterm\bin\Release\net10.0\ilterm.exe",
     "icons\ilforge.ico", "docs\README.md", "docs\LANGUAGES.md", "docs\lex-yacc.md"

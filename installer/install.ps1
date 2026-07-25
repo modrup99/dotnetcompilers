@@ -54,7 +54,30 @@ if (-not ($rt -match "Microsoft\.NETCore\.App 10\.")) {
 }
 
 Write-Host "Installing ILForge to $Dest ..."
+
+# A running shell or terminal keeps its .exe/.dll locked, which would fail the copy with an
+# opaque access error part-way through. Close anything running out of the target directory.
+$running = @(Get-Process -ErrorAction SilentlyContinue |
+             Where-Object { $_.Path -and $_.Path.StartsWith($Dest, [System.StringComparison]::OrdinalIgnoreCase) })
+if ($running.Count -gt 0) {
+    Write-Host "Closing $($running.Count) running ILForge process(es) so their files can be replaced:"
+    $running | ForEach-Object { Write-Host "   $($_.ProcessName) (pid $($_.Id))" }
+    $running | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+}
+
 New-Item -ItemType Directory -Force $Dest | Out-Null
+
+# Replace the program tree rather than merging into it: copying over an old install leaves
+# every file that has since been removed (a previous package shipped out\ wholesale, so
+# hundreds of stale test executables lingered in /bin). The home directory is untouched --
+# it normally lives outside $Dest, and is skipped here if the user put it inside.
+$homeFull = [IO.Path]::GetFullPath($HomeDir)
+$destFull = [IO.Path]::GetFullPath($Dest)
+Get-ChildItem $Dest -Force | Where-Object {
+    -not $homeFull.StartsWith([IO.Path]::GetFullPath($_.FullName), [System.StringComparison]::OrdinalIgnoreCase)
+} | ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+
 # copy everything except the installer scripts and the seed home
 Get-ChildItem $src -Force | Where-Object { $_.Name -notin @("install.ps1", "uninstall.ps1", "home") } |
     ForEach-Object { Copy-Item $_.FullName -Destination $Dest -Recurse -Force }
@@ -79,13 +102,15 @@ if (-not (Test-Path $rc)) {
 # The Start Menu shortcut already enabled the virtual filesystem (--home), so the tree
 # is live; these lines set the mounts to the installed layout (override as you like).
 
-home=$HomeDir
-bin=$Dest\out
-lib=$Dest\out
-include=$Dest\include
-etc=$Dest\etc
-tmp=$Dest\tmp
-windows=$prof
+# NB: the values are quoted -- an install path may contain a space (C:\Program Files\...)
+# and the shell splits an unquoted assignment at whitespace, exactly as sh does.
+home='$HomeDir'
+bin='$Dest\out'
+lib='$Dest\out'
+include='$Dest\include'
+etc='$Dest\etc'
+tmp='$Dest\tmp'
+windows='$prof'
 
 alias ll='ls -al'
 alias la='ls -a'
@@ -97,24 +122,31 @@ else {
     # A kept .ilshellrc may name a previous install location. Rebase the install-relative
     # mounts (bin/lib/include/etc/tmp), preserving home, aliases and every other edit.
     $lines = @(Get-Content $rc)
+    # values may be quoted (they are written quoted, since a path can contain spaces)
+    $unq = { param($v) $v.Trim().Trim("'").Trim('"') }
     $oldInstall = $null
-    foreach ($l in $lines) { if ($l -match '^\s*bin\s*=\s*(.+?)\s*$') { $oldInstall = (Split-Path $matches[1] -Parent); break } }
+    foreach ($l in $lines) {
+        if ($l -match '^\s*bin\s*=\s*(.+?)\s*$') { $oldInstall = (Split-Path (& $unq $matches[1]) -Parent); break }
+    }
     if ($oldInstall) {
         $oldp = $oldInstall.TrimEnd('\'); $newp = $Dest.TrimEnd('\')
-        if (-not $oldp.Equals($newp, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $changed = $false
-            for ($i = 0; $i -lt $lines.Count; $i++) {
-                if ($lines[$i] -match '^\s*(bin|lib|include|etc|tmp)\s*=\s*(.+?)\s*$') {
-                    $key = $matches[1]; $val = $matches[2]
-                    if ($val.StartsWith($oldp, [System.StringComparison]::OrdinalIgnoreCase)) {
-                        $lines[$i] = "$key=$newp" + $val.Substring($oldp.Length); $changed = $true
-                    }
+        $changed = $false
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match '^\s*(home|bin|lib|include|etc|tmp|windows)\s*=\s*(.+?)\s*$') {
+                $key = $matches[1]; $val = & $unq $matches[2]
+                $new = $val
+                if (-not $oldp.Equals($newp, [System.StringComparison]::OrdinalIgnoreCase) -and
+                    $key -ne 'home' -and $key -ne 'windows' -and
+                    $val.StartsWith($oldp, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $new = $newp + $val.Substring($oldp.Length)      # rebase to this install
                 }
+                $want = "$key='$new'"                                 # always (re)quote
+                if ($lines[$i] -ne $want) { $lines[$i] = $want; $changed = $true }
             }
-            if ($changed) {
-                Set-Content -Path $rc -Value $lines -Encoding ASCII
-                Write-Host "Rebased .ilshellrc mount paths ($oldInstall -> $Dest); your edits were kept."
-            }
+        }
+        if ($changed) {
+            Set-Content -Path $rc -Value $lines -Encoding ASCII
+            Write-Host "Updated .ilshellrc mount paths for this install (quoted, rebased if moved); your edits were kept."
         }
     }
 }
