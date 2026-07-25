@@ -22,4 +22,9 @@
     <ProjectReference Include="..\CRuntime\CRuntime.csproj" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <Compile Include="..\Shared\AppHost.cs" />
+  </ItemGroup>
+
 </Project>

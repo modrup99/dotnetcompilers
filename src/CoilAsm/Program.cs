@@ -1,5 +1,5 @@
-using System.Text.Json;
 using CoilAsm;
+using ILForge;
 
 // coilasm — assembles Coil's stack-IL IR into a real .NET assembly.
 //   coilasm <input.ir> -o <output> [--dll]
@@ -20,27 +20,21 @@ try
     if (input is null) { Console.Error.WriteLine("usage: coilasm <input.ir> -o <output> [--dll]"); return 2; }
     output ??= Path.ChangeExtension(input, asExe ? ".exe" : ".dll");
 
+    // The managed image is always a .dll; a native apphost .exe boots it (as cc does). So
+    // `-o prog.exe` yields prog.dll + prog.runtimeconfig.json + a runnable prog.exe rather
+    // than a managed PE named .exe, which could only be started via `dotnet prog.exe`.
+    string managed = asExe ? Path.ChangeExtension(output, ".dll") : output;
     string ir = File.ReadAllText(input);
-    string asmName = Path.GetFileNameWithoutExtension(output);
-    new Assembler(asmName).Assemble(ir, output, asExe);
+    string asmName = Path.GetFileNameWithoutExtension(managed);
+    new Assembler(asmName).Assemble(ir, managed, asExe);
 
-    if (asExe) WriteRuntimeConfig(output);
-    Console.WriteLine($"coilasm: {input} -> {output} ({(asExe ? "executable" : "library")})");
+    if (asExe)
+    {
+        AppHost.WriteRuntimeConfig(managed);
+        string? exe = AppHost.Stamp(managed, "coilasm");
+        Console.WriteLine($"coilasm: {input} -> {managed}{(exe != null ? " + " + exe : "")} (executable)");
+    }
+    else Console.WriteLine($"coilasm: {input} -> {managed} (library)");
     return 0;
 }
 catch (CoilAsmException ex) { Console.Error.WriteLine(ex.Message); return 1; }
-
-static void WriteRuntimeConfig(string assemblyPath)
-{
-    string configPath = Path.ChangeExtension(assemblyPath, ".runtimeconfig.json");
-    var config = new
-    {
-        runtimeOptions = new
-        {
-            tfm = "net10.0",
-            framework = new { name = "Microsoft.NETCore.App", version = "10.0.0" },
-            configProperties = new Dictionary<string, object>()
-        }
-    };
-    File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
-}

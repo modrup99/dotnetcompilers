@@ -111,63 +111,10 @@ static int Run(string[] args)
     return 0;
 }
 
-// Stamp out a native apphost .exe that boots the managed .dll, by patching the
-// app-path placeholder in the SDK's apphost template (same scheme as the SDK).
-static string? WriteAppHost(string managedDllPath)
-{
-    string? template = FindAppHostTemplate();
-    if (template is null)
-    {
-        Console.Error.WriteLine($"cc: apphost template not found; run with 'dotnet {Path.GetFileName(managedDllPath)}'");
-        return null;
-    }
-    string exePath = Path.ChangeExtension(managedDllPath, ".exe");
-    byte[] host = File.ReadAllBytes(template);
-    byte[] mark = Encoding.UTF8.GetBytes("c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2");
-    int off = IndexOf(host, mark);
-    if (off < 0) { Console.Error.WriteLine("cc: apphost placeholder not found"); return null; }
+// The apphost stamping and runtimeconfig writing live in src/Shared/AppHost.cs, shared
+// with coilasm so both back ends produce the same .dll + .runtimeconfig.json + .exe shape.
+static string? WriteAppHost(string managedDllPath) => ILForge.AppHost.Stamp(managedDllPath, "cc");
 
-    byte[] appBin = Encoding.UTF8.GetBytes(Path.GetFileName(managedDllPath));   // relative: exe sits beside dll
-    if (appBin.Length >= 1024) { Console.Error.WriteLine("cc: app path too long for apphost"); return null; }
-    Array.Copy(appBin, 0, host, off, appBin.Length);
-    for (int i = off + appBin.Length; i < off + mark.Length; i++) host[i] = 0;   // clear the rest of the marker
-    File.WriteAllBytes(exePath, host);
-    return exePath;
-}
-
-static int IndexOf(byte[] hay, byte[] needle)
-{
-    for (int i = 0; i <= hay.Length - needle.Length; i++)
-    {
-        int j = 0; while (j < needle.Length && hay[i + j] == needle[j]) j++;
-        if (j == needle.Length) return i;
-    }
-    return -1;
-}
-
-static string? FindAppHostTemplate()
-{
-    string rtDir = RuntimeEnvironment.GetRuntimeDirectory();                 // <root>/shared/Microsoft.NETCore.App/<ver>/
-    string root = Path.GetFullPath(Path.Combine(rtDir, "..", "..", ".."));
-    string rid = RuntimeInformation.RuntimeIdentifier;                        // e.g. win-x64
-    string hostPacks = Path.Combine(root, "packs", $"Microsoft.NETCore.App.Host.{rid}");
-    if (Directory.Exists(hostPacks))
-        foreach (var v in Directory.GetDirectories(hostPacks).OrderByDescending(x => x))
-        {
-            string p = Path.Combine(v, "runtimes", rid, "native", "apphost.exe");
-            if (File.Exists(p)) return p;
-        }
-    string sdks = Path.Combine(root, "sdk");
-    if (Directory.Exists(sdks))
-        foreach (var v in Directory.GetDirectories(sdks).OrderByDescending(x => x))
-        {
-            string p = Path.Combine(v, "AppHostTemplate", "apphost.exe");
-            if (File.Exists(p)) return p;
-        }
-    return null;
-}
-
-// The emitted assembly references CRuntime; place it alongside the output.
 // append the semicolon-separated directories of an environment variable to a search list
 static void AddEnvPaths(List<string> into, string envVar)
 {
@@ -220,16 +167,4 @@ static void StageLibs(string outputPath, List<string> libDirs, List<string> libN
     }
 }
 
-static void WriteRuntimeConfig(string assemblyPath)
-{
-    string configPath = Path.ChangeExtension(assemblyPath, ".runtimeconfig.json");
-    var config = new
-    {
-        runtimeOptions = new
-        {
-            tfm = "net10.0",
-            framework = new { name = "Microsoft.NETCore.App", version = "10.0.0" }
-        }
-    };
-    File.WriteAllText(configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
-}
+static void WriteRuntimeConfig(string assemblyPath) => ILForge.AppHost.WriteRuntimeConfig(assemblyPath);

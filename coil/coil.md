@@ -13,7 +13,7 @@ assembly. Because the IR *is* stack CIL, the translation is transparent — this
 reference shows you the IL as it goes.
 
 ```
-coilfe prog.coil -o prog.exe        # compile to a runnable assembly (dotnet prog.exe)
+coilfe prog.coil -o prog.exe        # compile to prog.dll + a native prog.exe launcher
 coilfe lib.coil  -o lib.dll --dll   # compile to a library for C#/VB.NET
 ```
 
@@ -152,7 +152,7 @@ Compile and run:
 
 ```
 coilfe hello.coil -o hello.exe
-dotnet hello.exe
+hello.exe
 ```
 
 Output:

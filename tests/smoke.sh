@@ -213,17 +213,13 @@ if out=$("$ROOT/out/awk.exe" "$W/t.awk" -o "$W/ta.exe" 2>&1) && [[ -f "$W/ta.exe
 else fail=$((fail+1)); failed="$failed awk"; echo "  FAIL  awk         compile: $out"; fi
 
 # ---- Coil ----
-# NB: coilfe emits a *managed* PE (no native apphost, unlike cc), so it is launched with
-# `dotnet <exe>` rather than directly.
+# coilfe emits .dll + .runtimeconfig.json + a stamped native .exe, as cc does, so the
+# produced exe must run directly (it once was a managed PE needing `dotnet <exe>`).
 cat > "$W/t.coil" <<'EOF'
 func sq(int n) -> int { return n * n; }
 func main() -> void { println(sq(7)); }
 EOF
-if out=$("$ROOT/out/coilfe.exe" "$W/t.coil" -o "$W/tc.exe" 2>&1) && [[ -f "$W/tc.exe" ]]; then
-    got=$(dotnet "$W/tc.exe" 2>&1)
-    if [[ "$got" == *"49"* ]]; then pass=$((pass+1)); printf '  ok    %-11s %s\n' coil "$got"
-    else fail=$((fail+1)); failed="$failed coil"; printf '  FAIL  %-11s got %q\n' coil "$got"; fi
-else fail=$((fail+1)); failed="$failed coil"; echo "  FAIL  coil        compile: ${out//$ROOT/}"; fi
+check coil "49" build_run "$W/tc.exe" "$ROOT/out/coilfe.exe" "$W/t.coil" -o "$W/tc.exe"
 
 # ---- interpreters ----
 cat > "$W/t.logo" <<'EOF'
