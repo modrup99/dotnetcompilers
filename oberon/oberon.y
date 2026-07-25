@@ -40,6 +40,10 @@ char *rf_name[6000]; int rf_type[6000]; int nrf; int n_struct;
 int eff(int t) { return ty_kind[t]; }
 int is_real(int t) { return eff(t) == T_REAL; }
 int is_str(int t) { return ty_kind[t] == T_STR; }
+/* ARRAY n OF CHAR is a string variable: its C form is a char[] so it decays to char* and
+ * the same strcpy/strcmp/%s emission that serves T_STR works on it unchanged. */
+int is_charr(int t) { return ty_kind[t] == TK_ARRAY && ty_kind[ty_a[t]] == T_CHR; }
+int is_text(int t) { return ty_kind[t] == T_STR || is_charr(t); }
 char *struct_name(int t) { return j2("R", istr(ty_c[t])); }
 char *cscalar(int t)
 {
@@ -67,8 +71,10 @@ char *decl_one(int t, char *name)
 
 /* symbols (vars/params/consts) */
 char *sym_n[6000]; int sym_k[6000]; int sym_t[6000]; int nsym; int saved_nsym;
+int sym_hc[6000]; int sym_cv[6000];   /* K_CONST with a known integer value */
 int sym_find(char *n) { int i; for (i = nsym - 1; i >= 0; i--) if (strcmp(sym_n[i], n) == 0) return i; return -1; }
-void sym_add(char *n, int k, int t) { sym_n[nsym] = n; sym_k[nsym] = k; sym_t[nsym] = t; nsym++; }
+void sym_add(char *n, int k, int t) { sym_n[nsym] = n; sym_k[nsym] = k; sym_t[nsym] = t; sym_hc[nsym] = 0; sym_cv[nsym] = 0; nsym++; }
+void sym_setconst(int v) { sym_hc[nsym - 1] = 1; sym_cv[nsym - 1] = v; }
 
 /* named types */
 char *tn_name[2000]; int tn_type[2000]; int ntn;
@@ -117,10 +123,44 @@ char *vcast(int mi) { char *sig = (m_psig[mi] && m_psig[mi][0]) ? j2("void*, ", 
 int tokln;
 void line(int ln) { e("\n#line "); e(istr(ln)); e(" \""); e(srcname); e("\"\n"); }
 
-struct E { int c; int t; };
-int  mkE(char *c, int t) { struct E *p = (struct E *)malloc(8); p->c = (int)c; p->t = t; return (int)p; }
+/* An expression value carries its C text, its type, and a compile-time constant
+ * annotation: kc==1 means "integer constant of value cv" (needed for array lengths and
+ * CASE labels), kc==2 means "a one-character string literal", which Oberon reads as a
+ * CHAR wherever a CHAR is expected. */
+struct E { int c; int t; int kc; int cv; };
+int  mkE(char *c, int t) { struct E *p = (struct E *)malloc(16); p->c = (int)c; p->t = t; p->kc = 0; p->cv = 0; return (int)p; }
 char *etext(int x) { return (char *)((struct E *)x)->c; }
 int  etype(int x) { return ((struct E *)x)->t; }
+int  ekc(int x) { return ((struct E *)x)->kc; }
+int  ecv(int x) { return ((struct E *)x)->cv; }
+int  mkEC(char *c, int t, int v) { int x = mkE(c, t); ((struct E *)x)->kc = 1; ((struct E *)x)->cv = v; return x; }
+int  emark(int x, int kc, int cv) { ((struct E *)x)->kc = kc; ((struct E *)x)->cv = cv; return x; }
+int  is_const(int x) { return ekc(x) == 1; }
+int  is_char1(int x) { return ekc(x) == 2; }
+char *cchr(int code) { return j3("((char)", istr(code), ")"); }
+int  as_char(int x) { if (is_char1(x)) return mkEC(cchr(ecv(x)), T_CHR, ecv(x)); return x; }
+
+int nerr;
+void cerr(char *m) { printf((int)"oberon: %s near line %d\n", (int)m, tokln); nerr++; }
+int const_len(int ev)   /* ARRAY <len> OF ...: the length must be known here, not guessed */
+{
+    if (!is_const(ev)) { cerr("array length is not a constant expression"); return 1; }
+    int n = ecv(ev);
+    if (n <= 0) { cerr("array length must be positive"); return 1; }
+    return n;
+}
+int fold(int r, int a, char *op, int b)   /* constant-fold integer arithmetic onto result r */
+{
+    if (!is_const(a) || !is_const(b)) return r;
+    int x = ecv(a), y = ecv(b), v;
+    if (op[0] == '+') v = x + y;
+    else if (op[0] == '-') v = x - y;
+    else if (op[0] == '*') v = x * y;
+    else if (op[0] == '/') { if (y == 0) return r; v = x / y; }
+    else if (op[0] == '%') { if (y == 0) return r; v = x % y; }
+    else return r;
+    return emark(r, 1, v);
+}
 
 struct AL { int e; int w; int next; };
 int mkAL(int ev, int w, int nx) { struct AL *p = (struct AL *)malloc(12); p->e = ev; p->w = w; p->next = nx; return (int)p; }
@@ -165,11 +205,14 @@ char *param_text(char *list, int type, int isvar)
 /* Build "(lhs op rhs)" by concatenation, NOT by interpolating `op` into a format string:
  * MOD emits the operator "%", which sprintf would read as a conversion specifier. */
 int bin(int a, char *op, int b, int t) { return mkE(j3("(", etext(a), j3(" ", op, j3(" ", etext(b), ")"))), t); }
-int arith(int a, char *op, int b) { int t = (is_real(etype(a)) || is_real(etype(b))) ? T_REAL : T_INT; return bin(a, op, b, t); }
+int arith(int a, char *op, int b) { int t = (is_real(etype(a)) || is_real(etype(b))) ? T_REAL : T_INT; int r = bin(a, op, b, t); if (t == T_INT) fold(r, a, op, b); return r; }
 int logic(int a, char *op, int b) { return bin(a, op, b, T_BOOL); }
 int rel(int a, char *op, char *sop, int b)
 {
-    if (is_str(etype(a)) || is_str(etype(b))) return mkE(F2(j3("(strcmp(%s, %s) ", sop, " 0)"), etext(a), etext(b)), T_BOOL);
+    /* c = "x" compares a CHAR with a one-character literal, so read the literal as a CHAR */
+    if (ty_kind[etype(a)] == T_CHR) b = as_char(b);
+    if (ty_kind[etype(b)] == T_CHR) a = as_char(a);
+    if (is_text(etype(a)) || is_text(etype(b))) return mkE(F2(j3("(strcmp(%s, %s) ", sop, " 0)"), etext(a), etext(b)), T_BOOL);
     return bin(a, op, b, T_BOOL);
 }
 char *cstrlit(char *s) { char *b = (char *)malloc(strlen(s) * 2 + 3); int i = 0, j = 0; b[j++] = '"'; while (s[i]) { if (s[i] == '"' || s[i] == '\\') b[j++] = '\\'; b[j++] = s[i]; i++; } b[j++] = '"'; b[j] = 0; return b; }
@@ -180,7 +223,15 @@ int emit_ident(char *name)
     if (is_module(name)) return mkE(name, T_MOD);
     if (cur_recv && strcmp(name, cur_recv) == 0) return mkE("(*self)", cls_rtype[curclass]);   /* receiver = self */
     int i = sym_find(name);
-    if (i >= 0) { if (sym_k[i] == K_VARP) return mkE(F1("(*%s)", cname(name)), sym_t[i]); return mkE(cname(name), sym_t[i]); }
+    if (i >= 0)
+    {
+        /* a VAR parameter of array type is already a pointer to the elements, so it must
+         * not be dereferenced: o_s indexes and strcpy's directly, (*o_s) would not */
+        if (sym_k[i] == K_VARP && ty_kind[sym_t[i]] == TK_ARRAY) return mkE(cname(name), sym_t[i]);
+        if (sym_k[i] == K_VARP) return mkE(F1("(*%s)", cname(name)), sym_t[i]);
+        if (sym_k[i] == K_CONST && sym_hc[i]) return mkEC(cname(name), sym_t[i], sym_cv[i]);   /* CONST usable as a length */
+        return mkE(cname(name), sym_t[i]);
+    }
     int f = f_find(name);
     if (f >= 0) return mkE(F1("%s()", cname(name)), f_ret[f]);
     if (curclass >= 0)    /* inside a method: unqualified field / method = self.X */
@@ -214,7 +265,9 @@ int do_deref(int base) { int t = etype(base); int el = (ty_kind[t] == TK_PTR) ? 
 char *build_args(char *name, int args, int f)
 {
     char *acc = ""; int k = 0, first = 1, a = args;
-    while (a) { struct AL *n = (struct AL *)a; char *x = etext(n->e); char *piece = (f >= 0 && k < f_np[f] && f_ref[f][k]) ? F1("&(%s)", x) : x; acc = first ? piece : j3(acc, ", ", piece); first = 0; k++; a = n->next; }
+    /* an array argument already decays to a pointer, so a VAR array parameter takes it as
+     * it stands; only scalars need the address-of */
+    while (a) { struct AL *n = (struct AL *)a; char *x = etext(n->e); int byref = (f >= 0 && k < f_np[f] && f_ref[f][k] && ty_kind[etype(n->e)] != TK_ARRAY); char *piece = byref ? F1("&(%s)", x) : x; acc = first ? piece : j3(acc, ", ", piece); first = 0; k++; a = n->next; }
     return acc;
 }
 
@@ -222,8 +275,8 @@ char *build_args(char *name, int args, int f)
 void io_write(int ev, int w, int real_default)
 {
     int t = etype(ev); char *x = etext(ev);
-    if (t == T_STR) e(F1("printf(\"%%s\", %s);\n", x));
-    else if (t == T_CHR) e(F1("printf(\"%%c\", %s);\n", x));
+    if (is_text(t)) e(F1("printf(\"%%s\", %s);\n", x));
+    else if (ty_kind[t] == T_CHR) e(F1("printf(\"%%c\", %s);\n", x));
     else if (eff(t) == T_REAL || real_default) { if (w) e(j2(F1("printf(\"%%*g\", %s, ", etext(w)), j2(x, ");\n"))); else e(F1("printf(\"%%g\", %s);\n", x)); }
     else if (t == T_BOOL) e(F1("printf(\"%%s\", (%s)?\"TRUE\":\"FALSE\");\n", x));
     else { if (w) e(j2(F1("printf(\"%%*d\", %s, ", etext(w)), j2(x, ");\n"))); else e(F1("printf(\"%%d\", %s);\n", x)); }
@@ -234,12 +287,20 @@ int arg_n(int args, int i) { int a = args; while (i-- > 0 && a) a = ((struct AL 
 int std_func(char *name, int args)
 {
     struct AL *a1 = (struct AL *)args; int e1 = a1 ? a1->e : 0; char *x = e1 ? etext(e1) : "";
-    if (strcmp(name, "ORD") == 0)  return mkE(F1("((int)(%s))", x), T_INT);
-    if (strcmp(name, "CHR") == 0)  return mkE(F1("((char)(%s))", x), T_CHR);
+    if (strcmp(name, "ORD") == 0 || strcmp(name, "CAP") == 0) { e1 = as_char(e1); x = etext(e1); }
+    if (strcmp(name, "ORD") == 0)  { if (is_const(e1)) return mkEC(F1("((int)(%s))", x), T_INT, ecv(e1)); return mkE(F1("((int)(%s))", x), T_INT); }
+    if (strcmp(name, "CHR") == 0)  { if (is_const(e1)) return mkEC(F1("((char)(%s))", x), T_CHR, ecv(e1)); return mkE(F1("((char)(%s))", x), T_CHR); }
     if (strcmp(name, "ABS") == 0)  return mkE(F1(is_real(etype(e1)) ? "fabs(%s)" : "abs(%s)", x), etype(e1));
     if (strcmp(name, "ODD") == 0)  return mkE(F1("(((%s)&1)!=0)", x), T_BOOL);
     if (strcmp(name, "CAP") == 0)  return mkE(F1("((char)toupper(%s))", x), T_CHR);
-    if (strcmp(name, "LEN") == 0)  return mkE(F1("((int)strlen(%s))", x), T_INT);
+    /* Oberon's LEN is the declared element count of an array; for a string literal or
+     * constant (which has no declared bound) it is the text length. */
+    if (strcmp(name, "LEN") == 0)
+    {
+        int lt = etype(e1);
+        if (ty_kind[lt] == TK_ARRAY && ty_b[lt] > 0) return mkEC(istr(ty_b[lt]), T_INT, ty_b[lt]);
+        return mkE(F1("((int)strlen(%s))", x), T_INT);
+    }
     if (strcmp(name, "SHORT") == 0 || strcmp(name, "LONG") == 0) return mkE(x, etype(e1));
     if (strcmp(name, "ENTIER") == 0 || strcmp(name, "TRUNC") == 0) return mkE(F1("((int)(%s))", x), T_INT);
     if (strcmp(name, "FLOAT") == 0) return mkE(F1("((double)(%s))", x), T_REAL);
@@ -261,8 +322,25 @@ int io_proc(char *name, char *proc, int args)   /* proc=="" for unqualified M2 c
     if (strcmp(p, "WriteString") == 0 || strcmp(p, "String") == 0) { io_write(a1->e, 0, 0); return 1; }
     if (strcmp(p, "WriteInt") == 0 || strcmp(p, "Int") == 0 || strcmp(p, "WriteCard") == 0) { io_write(a1->e, a1->next ? ((struct AL *)a1->next)->e : 0, 0); return 1; }
     if (strcmp(p, "WriteReal") == 0 || strcmp(p, "Real") == 0) { io_write(a1->e, a1->next ? ((struct AL *)a1->next)->e : 0, 1); return 1; }
-    if (strcmp(p, "Write") == 0 || strcmp(p, "WriteChar") == 0 || strcmp(p, "Char") == 0) { e(F1("printf(\"%%c\", %s);\n", etext(a1->e))); return 1; }
+    if (strcmp(p, "Write") == 0 || strcmp(p, "WriteChar") == 0 || strcmp(p, "Char") == 0) { e(F1("printf(\"%%c\", %s);\n", etext(as_char(a1->e)))); return 1; }
     if (strcmp(p, "WriteLn") == 0 || strcmp(p, "Ln") == 0) { e("printf(\"\\n\");\n"); return 1; }
+    return 0;
+}
+/* the two Strings operations that a string variable actually needs; qualified calls only,
+ * so a user PROCEDURE Length/Append is not shadowed */
+int mod_func(char *m, char *p, int args)
+{
+    struct AL *a1 = (struct AL *)args; int e1 = a1 ? a1->e : 0;
+    if (strcmp(m, "Strings") == 0 && strcmp(p, "Length") == 0 && e1) return mkE(F1("((int)strlen(%s))", etext(e1)), T_INT);
+    return -1;
+}
+int mod_proc(char *m, char *p, int args)
+{
+    struct AL *a1 = (struct AL *)args;
+    if (strcmp(m, "Strings") != 0 || a1 == 0 || a1->next == 0) return 0;
+    int src = a1->e, dst = ((struct AL *)a1->next)->e;
+    if (strcmp(p, "Append") == 0) { e(F2("strcat(%s, %s);\n", etext(dst), etext(src))); return 1; }
+    if (strcmp(p, "Copy") == 0) { e(F2("strcpy(%s, %s);\n", etext(dst), etext(src))); return 1; }
     return 0;
 }
 void do_call(char *name, int args)   /* unqualified statement call: builtin, std, or user proc */
@@ -283,6 +361,7 @@ void do_call(char *name, int args)   /* unqualified statement call: builtin, std
         return;
     }
     if (strcmp(name, "HALT") == 0) { struct AL *n = (struct AL *)args; e(F1("exit(%s);\n", n ? etext(n->e) : (char *)"0")); return; }
+    if (strcmp(name, "COPY") == 0) { struct AL *n = (struct AL *)args; e(F2("strcpy(%s, %s);\n", etext(((struct AL *)n->next)->e), etext(n->e))); return; }
     if (strcmp(name, "INCL") == 0) { struct AL *n = (struct AL *)args; e(F2("ps_incl(%s, %s);\n", etext(n->e), etext(((struct AL *)n->next)->e))); return; }
     if (strcmp(name, "EXCL") == 0) { struct AL *n = (struct AL *)args; e(F2("ps_excl(%s, %s);\n", etext(n->e), etext(((struct AL *)n->next)->e))); return; }
     int f = f_find(name);
@@ -291,6 +370,7 @@ void do_call(char *name, int args)   /* unqualified statement call: builtin, std
 /* type-bound procedures dispatch through the object's __vmt (all are virtual) */
 int method_call(int base, char *name, int args)
 {
+    if (etype(base) == T_MOD) { int r = mod_func(etext(base), name, args); if (r >= 0) return r; }
     if (ty_kind[etype(base)] == TK_PTR) base = do_deref(base);
     int cls = cls_of_type(etype(base));
     int mi = meth_find(cls, name);
@@ -311,7 +391,7 @@ char *self_call(int mi, char *a)   /* call on `self` inside a method body (virtu
 }
 void do_qcall(int base, char *proc, int args)   /* obj.Method(args) or Module.Proc(args) */
 {
-    if (etype(base) == T_MOD) { if (io_proc("", proc, args)) return; }
+    if (etype(base) == T_MOD) { if (io_proc("", proc, args)) return; if (mod_proc(etext(base), proc, args)) return; }
     int t = etype(base); int bt = (ty_kind[t] == TK_PTR) ? ty_a[t] : t;
     int cls = cls_of_type(bt);
     if (cls >= 0 && meth_find(cls, proc) >= 0) { int r = method_call(base, proc, args); e(etext(r)); e(";\n"); return; }
@@ -333,7 +413,9 @@ void begin_method(int cls, char *methn, int ret, char *params, char *recv)
 }
 void do_assign(int lv, int ev)
 {
-    if (is_str(etype(lv))) { e(F2("strcpy(%s, %s);\n", etext(lv), etext(ev))); return; }
+    int lt = etype(lv);
+    if (ty_kind[lt] == T_CHR) ev = as_char(ev);            /* c := "x" */
+    if (is_text(lt)) { e(F2("strcpy(%s, %s);\n", etext(lv), etext(ev))); return; }
     e(F2("%s = %s;\n", etext(lv), etext(ev)));
 }
 %}
@@ -342,7 +424,7 @@ void do_assign(int lv, int ev)
 %token KWHILE KDO KREPEAT KUNTIL KFOR KTO KBY KCASE KOF KLOOP KEXIT KRETURN
 %token KARRAY KRECORD KPOINTER KSET KDIV KMOD KAND KOR KNOT KIN KNIL KTRUE KFALSE
 %token KWITH KIMPORT KFROM KDEF KIMPL
-%token IDENT INTLIT REALLIT STRLIT ASSIGN DOTDOT LE GE NE
+%token IDENT INTLIT REALLIT STRLIT CHARLIT ASSIGN DOTDOT LE GE NE
 
 %nonassoc '=' NE '<' '>' LE GE KIN
 %left '+' '-' KOR
@@ -365,7 +447,9 @@ impitem   : IDENT | IDENT ASSIGN IDENT ;
 decl_seq  : /* empty */ | decl_seq decl ;
 decl      : KCONST clist | KTYPE tlist | KVAR vlist | proc_decl ;
 
-clist     : /* empty */ | clist identdef '=' expr ';'  { e(j4(cscalar(etype($4)), " ", cname((char *)$2), j3(" = ", etext($4), ";\n"))); sym_add((char *)$2, K_CONST, etype($4)); } ;
+clist     : /* empty */ | clist identdef '=' expr ';'
+            { e(j4(cscalar(etype($4)), " ", cname((char *)$2), j3(" = ", etext($4), ";\n")));
+              sym_add((char *)$2, K_CONST, etype($4)); if (is_const($4)) sym_setconst(ecv($4)); } ;
 tlist     : /* empty */ | tlist tdname '=' typ ';'
             { char *nm = (char *)$2; int ty = $4; int idx = tn_find(nm);
               if (idx >= 0) { ty_kind[idx] = ty_kind[ty]; ty_a[idx] = ty_a[ty]; ty_b[idx] = ty_b[ty]; ty_c[idx] = ty_c[ty]; int c = cls_of_type(ty); if (c >= 0) cls_rtype[c] = idx; }
@@ -386,7 +470,7 @@ typ       : IDENT                         { $$ = name_type((char *)$1); }
           | KSET                          { $$ = T_SET; } ;
 recbase   : KRECORD                  { g_recbase = -1; }
           | KRECORD '(' IDENT ')'    { g_recbase = cls_find((char *)$3); } ;
-arrlen    : INTLIT  { $$ = $1; } | IDENT { $$ = 64; } ;   /* const-named lengths approx */
+arrlen    : expr  { $$ = const_len($1); } ;   /* any constant expression; error if not one */
 rec_open  : /* empty */  { rec_push(); } ;
 field_seq : field | field_seq ';' field | field_seq ';' ;
 field     : idlist ':' typ  { add_fields((char *)$1, $3); } ;
@@ -465,8 +549,10 @@ caselist  : casearm | caselist '|' casearm ;
 casearm   : /* empty */ | caselabset stmt_seq  { e("break;\n"); } ;
 caselabset: labels ':' ;
 labels    : caselabel | labels ',' caselabel ;
-caselabel : INTLIT                 { e(F1("case %s:\n", istr($1))); }
-          | INTLIT DOTDOT INTLIT   { int v; for (v = $1; v <= $3; v++) e(F1("case %s:\n", istr(v))); } ;
+caselabel : INTLIT                   { e(F1("case %s:\n", istr($1))); }
+          | INTLIT DOTDOT INTLIT     { int v; for (v = $1; v <= $3; v++) e(F1("case %s:\n", istr(v))); }
+          | CHARLIT                  { e(F1("case %s:\n", istr($1))); }
+          | CHARLIT DOTDOT CHARLIT   { int v; for (v = $1; v <= $3; v++) e(F1("case %s:\n", istr(v))); } ;
 caseend   : KEND  { e("}\n"); }
           | caseelse stmt_seq KEND  { e("}\n"); } ;
 caseelse  : KELSE  { e("default:\n"); } ;
@@ -489,24 +575,25 @@ expr : expr '=' expr   { $$ = rel($1, "==", "==", $3); }
      | expr LE expr    { $$ = rel($1, "<=", "<=", $3); }
      | expr GE expr    { $$ = rel($1, ">=", ">=", $3); }
      | expr KIN expr   { $$ = mkE(F2("(ps_in(%s, %s) != 0)", etext($3), etext($1)), T_BOOL); }
-     | expr '+' expr   { if (etype($1) == T_SET) $$ = mkE(F2("ps_or(%s, %s)", etext($1), etext($3)), T_SET); else if (is_str(etype($1))) $$ = mkE(F2("__sc(%s, %s)", etext($1), etext($3)), T_STR); else $$ = arith($1, "+", $3); }
+     | expr '+' expr   { if (etype($1) == T_SET) $$ = mkE(F2("ps_or(%s, %s)", etext($1), etext($3)), T_SET); else if (is_text(etype($1)) || is_text(etype($3))) $$ = mkE(F2("__sc(%s, %s)", etext($1), etext($3)), T_STR); else $$ = arith($1, "+", $3); }
      | expr '-' expr   { if (etype($1) == T_SET) $$ = mkE(F2("ps_sub(%s, %s)", etext($1), etext($3)), T_SET); else $$ = arith($1, "-", $3); }
      | expr KOR expr   { $$ = logic($1, "||", $3); }
      | expr '*' expr   { if (etype($1) == T_SET) $$ = mkE(F2("ps_and(%s, %s)", etext($1), etext($3)), T_SET); else $$ = arith($1, "*", $3); }
      | expr '/' expr   { $$ = mkE(F2("((double)(%s)/(double)(%s))", etext($1), etext($3)), T_REAL); }
-     | expr KDIV expr  { $$ = bin($1, "/", $3, T_INT); }
-     | expr KMOD expr  { $$ = bin($1, "%", $3, T_INT); }
+     | expr KDIV expr  { $$ = fold(bin($1, "/", $3, T_INT), $1, "/", $3); }
+     | expr KMOD expr  { $$ = fold(bin($1, "%", $3, T_INT), $1, "%", $3); }
      | expr KAND expr  { $$ = logic($1, "&&", $3); }
      | KNOT expr       { $$ = mkE(F1("(!%s)", etext($2)), T_BOOL); }
-     | '-' expr %prec UMINUS  { $$ = mkE(F1("(-%s)", etext($2)), etype($2)); }
+     | '-' expr %prec UMINUS  { int r = mkE(F1("(-%s)", etext($2)), etype($2)); if (is_const($2)) emark(r, 1, -ecv($2)); $$ = r; }
      | '+' expr %prec UMINUS  { $$ = $2; }
-     | '(' expr ')'    { $$ = mkE(F1("(%s)", etext($2)), etype($2)); }
+     | '(' expr ')'    { $$ = emark(mkE(F1("(%s)", etext($2)), etype($2)), ekc($2), ecv($2)); }
      | '{' setlist '}' { $$ = mkE(build_setval($2), T_SET); }
-     | INTLIT          { $$ = mkE(istr($1), T_INT); }
+     | INTLIT          { $$ = mkEC(istr($1), T_INT, $1); }
      | REALLIT         { $$ = mkE((char *)$1, T_REAL); }
-     | STRLIT          { $$ = mkE(cstrlit((char *)$1), T_STR); }
-     | KTRUE           { $$ = mkE("1", T_BOOL); }
-     | KFALSE          { $$ = mkE("0", T_BOOL); }
+     | CHARLIT         { $$ = mkEC(cchr($1), T_CHR, $1); }
+     | STRLIT          { char *s = (char *)$1; int r = mkE(cstrlit(s), T_STR); if (strlen(s) == 1) emark(r, 2, s[0]); $$ = r; }
+     | KTRUE           { $$ = mkEC("1", T_BOOL, 1); }
+     | KFALSE          { $$ = mkEC("0", T_BOOL, 0); }
      | KNIL            { $$ = mkE("0", T_INT); }
      | desig           { $$ = $1; }
      | IDENT '(' arglist ')'  { $$ = emit_fcall((char *)$1, $3); }
@@ -610,6 +697,7 @@ int main(int argc, char **argv)
     yy_scan_string((int)src);
     yyparse();
     fclose(out);
+    if (nerr > 0) { printf((int)"oberon: %d error(s), not compiled\n", nerr); return 1; }
     char cc[1100]; char *repo = (char *)rt_repo();
     sprintf((int)cc, (int)"%s\\src\\Cc\\bin\\Release\\net10.0\\cc.exe", (int)repo);
     int av[8]; char icon[1100]; sprintf((int)icon, (int)"%s\\icons\\oberon.png", (int)repo);

@@ -49,6 +49,19 @@ void outd(int n)
     while (i > 0) putchar(t[--i]);
 }
 
+/* diagnostics go to stderr (handle 3) so they don't corrupt the generated C on stdout */
+void eputs(char *s) { fputs((int)s, 3); }
+void eputn(int n)
+{
+    char t[16]; char b[16]; int i = 0, j = 0;
+    if (n == 0) { eputs("0"); return; }
+    if (n < 0) { eputs("-"); n = -n; }
+    while (n > 0) { t[i++] = '0' + (n % 10); n = n / 10; }
+    while (i > 0) b[j++] = t[--i];
+    b[j] = 0; eputs(b);
+}
+void die(char *s, int n) { eputs("lex: "); eputs(s); eputs(" ("); eputn(n); eputs(")\n"); exit(2); }
+
 /* ======================= reading the .l file ======================= */
 int spos;
 
@@ -125,6 +138,29 @@ void read_action(char *out)
         while (spos < srclen)
         {
             int c = src[spos];
+            if (k >= 2040) die("action too long (max 2040 chars)", k);
+            /* copy string/char literals and comments verbatim, so braces inside them
+             * don't fool the nesting counter -- an action like { printf("{\n"); } used
+             * to swallow the remainder of the file. (yacc's reader does the same.) */
+            if (c == '"' || c == '\'')
+            {
+                int q = c; out[k++] = src[spos++];
+                while (spos < srclen && src[spos] != q)
+                {
+                    if (src[spos] == '\\') { out[k++] = src[spos++]; if (spos < srclen) out[k++] = src[spos++]; continue; }
+                    out[k++] = src[spos++];
+                }
+                if (spos < srclen) out[k++] = src[spos++];   /* closing quote */
+                continue;
+            }
+            if (c == '/' && src[spos + 1] == '/') { while (spos < srclen && src[spos] != '\n') out[k++] = src[spos++]; continue; }
+            if (c == '/' && src[spos + 1] == '*')
+            {
+                out[k++] = src[spos++]; out[k++] = src[spos++];
+                while (spos < srclen && !(src[spos] == '*' && src[spos + 1] == '/')) out[k++] = src[spos++];
+                if (spos < srclen) { out[k++] = src[spos++]; out[k++] = src[spos++]; }
+                continue;
+            }
             if (c == '{') depth++;
             if (c == '}') { if (depth == 0) { spos++; break; } depth--; }
             out[k++] = c; spos++;
@@ -132,7 +168,7 @@ void read_action(char *out)
     }
     else
     {
-        while (spos < srclen && src[spos] != '\n') out[k++] = src[spos++];
+        while (spos < srclen && src[spos] != '\n') { if (k >= 2040) die("action too long (max 2040 chars)", k); out[k++] = src[spos++]; }
     }
     out[k] = 0;
     spos = next_line(spos);

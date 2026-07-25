@@ -228,24 +228,22 @@ once per line, so a syntax error costs one line and not the session
 with `yy_buf[yy_pos]` or consume raw text by advancing `yy_pos` itself. That is
 the only substitute for `input()`/`unput()`.
 
-### Two gotchas in `lex` itself
+### One gotcha in `lex` itself
 
-**Braces inside string literals in an action break the action reader.** `lex`
-counts `{` and `}` with no regard for quoting (unlike `yacc`, whose action reader
-does skip string and character literals). This rule:
+**Actions have a length limit, and most other limits are unchecked.** An action
+longer than 2040 characters is reported (`lex: action too long`, exit code 2);
+put long code in a helper function in the `%{ ... %}` prologue instead. The other
+`lex` table limits (see [section 7](#7-limits-at-a-glance)) are *not* checked, so
+exceeding them corrupts memory quietly — size a big grammar's tables generously.
+
+Both readers handle quoting correctly: braces and `$` inside string and character
+literals in an action are copied through verbatim, so
 
 ```
 "a"   { printf((int)"open brace: {\n"); return 1; }
 ```
 
-consumes the rest of the file into rule 0's action and emits broken C. Keep
-braces balanced inside actions (`"{...}"` is fine), build such strings in a
-helper function in the `%{ ... %}` prologue, or assemble them from `%c` and a
-character code.
-
-**No bounds are checked.** `yacc` reports its own overflows with a message and
-exit code 2; `lex` does not check anything. Exceeding a `lex` limit (see
-[section 6](#6-limits-at-a-glance)) corrupts memory quietly.
+is fine in either a `.l` or a `.y` action.
 
 ---
 
@@ -335,17 +333,21 @@ REPLs here work.
 
 ### Three gotchas, in order of how much they will cost you
 
-**No mid-rule actions.** Writing an action in the middle of an alternative does
-*not* create the anonymous marker nonterminal real yacc would create. `yacc.c`
-reads every `{...}` it meets into the same slot, so all but the **last** action
-are silently discarded, and the last one runs at the end of the rule. This:
+**No mid-rule actions — and `yacc` now rejects them.** Writing an action in the
+middle of an alternative does *not* create the anonymous marker nonterminal real
+yacc would create, so this:
 
 ```
 s : A { printf("mid1\n"); } B { printf("mid2\n"); } C ;
 ```
 
-emits one action, `printf("mid2\n")`, fired after `C` is seen. `$1`/`$2`/`$3`
-still number the grammar symbols `A`/`B`/`C`, because no marker was inserted.
+is refused with `yacc: mid-rule action not supported: move it into an empty marker
+nonterminal that reads $0`, exit code 2. (It used to be accepted: every `{...}`
+was read into the same slot, so all but the last action were silently discarded
+and the last ran at the *end* of the rule — code that looked right and behaved
+wrongly. Two of the compilers in this repo had latent bugs from exactly that.)
+Only one action per alternative, at its end, is supported; use the marker trick
+below for anything else.
 There is no warning. Use an explicit marker rule instead (below).
 
 **No negative stack access.** `$-1`, `$-2` and so on are not recognised: the `$`
@@ -852,11 +854,14 @@ on stderr. Everything else, in both tools, overflows silently.
 | | |
 |---|---|
 | unknown `%` declaration | silently ignored, both tools |
-| `%token`/`%left`/... continuation line | silently ignored |
-| mid-rule action | all but the last silently discarded; the last runs at end of rule |
+| `%token`/`%left`/... continuation line | honoured: a declaration runs to the next `%` |
+| mid-rule action | **rejected** with a message (exit 2); use a `$0` marker |
+| two actions in one alternative | **rejected** with a message (exit 2) |
 | `$-N` | not supported; `$0` is |
-| `$N` inside a string literal in a `.y` action | rewritten |
-| `{`/`}` inside a string literal in a `.l` action | miscounted; swallows the rest of the file |
+| `$N` inside a string literal in an action | left as text, in both `.y` and `.l` |
+| `{`/`}` inside a string literal in an action | counted correctly, in both `.y` and `.l` |
+| action longer than the buffer | reported by both tools (exit 2) |
+| other `lex` table overflows | unchecked; corrupt memory quietly |
 | unmatched input character | skipped silently by the scanner |
 | empty-matching lex rule | never fires |
 | unresolved shift/reduce conflict | counted, shift wins |

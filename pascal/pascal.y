@@ -13,6 +13,7 @@
 #define T_STR  5
 #define T_FILE 6
 #define T_SET  7
+#define T_SETL 8      /* an unmaterialised set literal: `c` holds the element list */
 #define TK_ARRAY 10
 #define TK_RECORD 11
 #define TK_PTR 12
@@ -72,6 +73,9 @@ char *decl_one(int t, char *name)
     {
         char dims[256]; dims[0] = 0; int el = t;
         while (ty_kind[el] == TK_ARRAY) { int len = ty_c[el] - ty_b[el] + 1; char d[32]; sprintf((int)d, (int)"[%d]", len); strcat(dims, d); el = ty_a[el]; }
+        /* string elements become an extra [256] dimension, so the slots are real
+         * storage rather than uninitialised pointers */
+        if (ty_kind[el] == T_STR) { strcat(dims, "[256]"); return j4("char", " ", name, dims); }
         return j4(cscalar(el), " ", name, dims);
     }
     if (ty_kind[t] == T_STR) return j3("char ", name, "[256]");
@@ -92,8 +96,12 @@ int tn_find(char *n) { int i; for (i = 0; i < ntn; i++) if (strcmp(tn_name[i], n
 char *f_n[2000]; int f_ret[2000]; int f_np[2000]; char f_ref[2000][32]; int nf;
 int g_np; char g_ref[64];
 char *curfunc; int cur_ret;
+/* a subprogram header is buffered, not emitted, until we know whether `forward`
+ * follows: forward emits only a C prototype, the real definition emits the body. */
+char *pend_hdr; char *pend_pre; char *g_pro;
 int f_find(char *n) { int i; for (i = 0; i < nf; i++) if (strcmp(f_n[i], n) == 0) return i; return -1; }
-void reg_func(char *n, int ret) { f_n[nf] = n; f_ret[nf] = ret; f_np[nf] = g_np; int k; for (k = 0; k < g_np; k++) f_ref[nf][k] = g_ref[k]; nf++; }
+/* re-registering a name (forward, then the real definition) updates it in place */
+void reg_func(char *n, int ret) { int i = f_find(n); if (i < 0) { i = nf++; f_n[i] = n; } f_ret[i] = ret; f_np[i] = g_np; int k; for (k = 0; k < g_np; k++) f_ref[i][k] = g_ref[k]; }
 
 int base_type(char *id)
 {
@@ -128,6 +136,14 @@ char *vcast(int mi)    /* "(ret (*)(void*, psig))" for a virtual call site */
 {
     char *sig = (m_psig[mi] && m_psig[mi][0]) ? j2("void*, ", m_psig[mi]) : "void*";
     return j4("(", cscalar(m_ret[mi]), j3(" (*)(", sig, "))"), "");
+}
+
+/* the hidden result variable of a function; a `string` result needs real storage,
+ * because assigning to it is a strcpy */
+char *result_decl(int ret)
+{
+    if (ty_kind[ret] == T_STR) return "char *__result = (char *)malloc(256); __result[0] = 0;\n";
+    return j3(cscalar(ret), " __result;\n", "");
 }
 
 int tokln;
@@ -166,18 +182,33 @@ void decl_vars(char *list, int type)
 char *param_text(char *list, int type, int isvar)
 {
     char buf[2048]; strcpy(buf, list); char *acc = ""; int first = 1, i = 0, st = 0;
+    /* arrays and strings are aggregates: C decays them to a pointer, which is
+     * already the by-reference behaviour `var` wants -- no extra indirection. */
+    int agg = (ty_kind[type] == TK_ARRAY || ty_kind[type] == T_STR);
+    int byref = isvar && !agg;
     while (1)
     {
         if (buf[i] == ',' || buf[i] == 0)
         {
             int end = buf[i]; buf[i] = 0; char *nm = buf + st;
-            sym_add((char *)strdup((int)nm), isvar ? K_VARP : K_VAR, type);
-            g_ref[g_np] = isvar; g_np++;
-            char *pt = (isvar || !is_real(type)) ? "int" : "double";   /* cast-signature param type (refs/ptrs are int-width) */
+            sym_add((char *)strdup((int)nm), byref ? K_VARP : K_VAR, type);
+            g_ref[g_np] = byref; g_np++;
+            char *pt = (byref || !is_real(type)) ? "int" : "double";   /* cast-signature param type (refs/ptrs are int-width) */
             g_psig = (g_psig && g_psig[0]) ? j3(g_psig, ", ", pt) : pt;
             char *p;
-            if (isvar) p = j2(j2(cscalar(type), " *"), cname(nm));   /* by reference */
-            else p = decl_one(type, cname(nm));                      /* by value (arrays/strings decay) */
+            if (byref) p = j2(j2(cscalar(type), " *"), cname(nm));   /* by reference */
+            else if (agg && !isvar)
+            {
+                /* by value: the caller's storage arrives as a pointer under a hidden
+                 * name; the prologue copies it into a same-named local so that writes
+                 * inside the subprogram do not touch the caller's variable. */
+                char *arg = j2(cname(nm), "__a");
+                p = decl_one(type, arg);
+                char *cp = (ty_kind[type] == T_STR) ? F2("strcpy(%s, %s);\n", cname(nm), arg)
+                                                    : j2(F2("memcpy(%s, %s, sizeof(", cname(nm), arg), j2(cname(nm), "));\n"));
+                g_pro = j2(g_pro, j4(decl_one(type, cname(nm)), ";\n", cp, ""));
+            }
+            else p = decl_one(type, cname(nm));                      /* by value */
             acc = first ? p : j3(acc, ", ", p); first = 0;
             if (end == 0) break; st = i + 1;
         }
@@ -189,12 +220,21 @@ char *param_text(char *list, int type, int isvar)
 /* --- expression helpers --- */
 /* Build "(lhs op rhs)" by concatenation, NOT by interpolating `op` into a format string:
  * `mod` emits the operator "%", which sprintf would read as a conversion specifier. */
-int bin(int a, char *op, int b, int t) { return mkE(j3("(", etext(a), j3(" ", op, j3(" ", etext(b), ")"))), t); }
+int bin(int a, char *op, int b, int t) { a = setv(a); b = setv(b); return mkE(j3("(", etext(a), j3(" ", op, j3(" ", etext(b), ")"))), t); }
 int arith(int a, char *op, int b) { int t = (is_real(etype(a)) || is_real(etype(b))) ? T_REAL : T_INT; return bin(a, op, b, t); }
 int logic(int a, char *bop, char *iop, int b) { int bo = (eff(etype(a)) == T_BOOL); return bin(a, bo ? bop : iop, b, bo ? T_BOOL : T_INT); }
+/* a value in a string context: a char (in Turbo Pascal a one-character literal is
+ * compatible with both char and string) is widened to a one-character string. */
+char *sarg(int x)
+{
+    if (is_str(etype(x))) return etext(x);
+    if (eff(etype(x)) == T_CHR) return F1("__pchs(%s)", etext(x));
+    return etext(x);
+}
 int rel(int a, char *op, char *sop, int b)     /* strings compare via strcmp */
 {
-    if (is_str(etype(a)) || is_str(etype(b))) return mkE(F2(j3("(strcmp(%s, %s) ", sop, " 0)"), etext(a), etext(b)), T_BOOL);
+    a = setv(a); b = setv(b);
+    if (is_str(etype(a)) || is_str(etype(b))) return mkE(F2(j3("(strcmp(%s, %s) ", sop, " 0)"), sarg(a), sarg(b)), T_BOOL);
     return bin(a, op, b, T_BOOL);
 }
 
@@ -258,7 +298,7 @@ char *build_args(char *name, int args, int f)
     char *acc = ""; int k = 0, first = 1, a = args;
     while (a)
     {
-        struct AL *n = (struct AL *)a; char *x = etext(n->e);
+        struct AL *n = (struct AL *)a; char *x = etext(setv(n->e));
         char *piece = (f >= 0 && k < f_np[f] && f_ref[f][k]) ? F1("&(%s)", x) : x;
         acc = first ? piece : j3(acc, ", ", piece); first = 0;
         k++; a = n->next;
@@ -288,12 +328,12 @@ int std_func(char *name, int args)
     if (strcmp(name, "odd") == 0)  return mkE(F1("(((%s)&1)!=0)", x), T_BOOL);
     if (strcmp(name, "succ") == 0) return mkE(F1("((%s)+1)", x), etype(e1));
     if (strcmp(name, "pred") == 0) return mkE(F1("((%s)-1)", x), etype(e1));
-    if (strcmp(name, "length") == 0) return mkE(F1("((int)strlen(%s))", x), T_INT);
+    if (strcmp(name, "length") == 0) return mkE(F1("((int)strlen(%s))", sarg(e1)), T_INT);
     if (strcmp(name, "upcase") == 0) return mkE(F1("((char)toupper(%s))", x), T_CHR);
     if (strcmp(name, "eof") == 0) return mkE(F1("(pf_eof(%s) != 0)", x), T_BOOL);
-    if (strcmp(name, "pos") == 0)  { struct AL *a2 = (struct AL *)a1->next; return mkE(F2("__ppos(%s, %s)", x, etext(a2->e)), T_INT); }
-    if (strcmp(name, "copy") == 0) { struct AL *a2 = (struct AL *)a1->next; struct AL *a3 = (struct AL *)a2->next; return mkE(j2("__pcopy(", j4(x, ", ", etext(a2->e), j3(", ", etext(a3->e), ")"))), T_STR); }
-    if (strcmp(name, "concat") == 0) { struct AL *a2 = (struct AL *)a1->next; return mkE(F2("__pscat(%s, %s)", x, etext(a2->e)), T_STR); }
+    if (strcmp(name, "pos") == 0)  { struct AL *a2 = (struct AL *)a1->next; return mkE(F2("__ppos(%s, %s)", sarg(e1), sarg(a2->e)), T_INT); }
+    if (strcmp(name, "copy") == 0) { struct AL *a2 = (struct AL *)a1->next; struct AL *a3 = (struct AL *)a2->next; return mkE(j2("__pcopy(", j4(sarg(e1), ", ", etext(a2->e), j3(", ", etext(a3->e), ")"))), T_STR); }
+    if (strcmp(name, "concat") == 0) { struct AL *a2 = (struct AL *)a1->next; return mkE(F2("__pscat(%s, %s)", sarg(e1), sarg(a2->e)), T_STR); }
     return -1;
 }
 int emit_fcall(char *name, int args)
@@ -361,10 +401,16 @@ char *build_setval(int list)
     while (a) { struct AL *nn = (struct AL *)a; char *lo = etext(nn->e); char *hi = nn->d ? etext(nn->w) : lo; args = j2(args, j4(", ", lo, ", ", hi)); a = nn->next; }
     return F1("ps_lit(%s)", args);
 }
+int is_set(int t) { return t == T_SET || t == T_SETL; }
+/* materialise a set literal into a runtime set handle (a no-op for anything else).
+ * Deferring this lets `x in [...]` stay an inline OR-chain instead of building a
+ * throw-away set on every evaluation. */
+int setv(int x) { if (etype(x) == T_SETL) return mkE(build_setval((int)etext(x)), T_SET); return x; }
 
 void do_assign(int lv, int ev)
 {
-    if (is_str(etype(lv))) { e(F2("strcpy(%s, %s);\n", etext(lv), etext(ev))); return; }
+    ev = setv(ev);
+    if (is_str(etype(lv))) { e(F2("strcpy(%s, %s);\n", etext(lv), sarg(ev))); return; }
     e(F2("%s = %s;\n", etext(lv), etext(ev)));
 }
 void call_noargs(char *name)
@@ -375,7 +421,7 @@ void call_noargs(char *name)
 }
 void wr_one(struct AL *n)        /* one write argument, honoring :w:d */
 {
-    int t = etype(n->e); char *x = etext(n->e);
+    int ev = setv(n->e); int t = etype(ev); char *x = etext(ev);
     if (eff(t) == T_REAL)
     {
         if (n->w && n->d) e(j2(F2("printf(\"%%*.*f\", %s, %s, ", etext(n->w), etext(n->d)), j2(x, ");\n")));
@@ -487,7 +533,8 @@ program   : KPROGRAM IDENT ';' phead decl_list mainhdr compound '.'  { e("\nretu
 phead     : /* empty */  { e("char *__pscat(char*a,char*b){char*r=(char*)malloc(strlen(a)+strlen(b)+1);strcpy(r,a);strcat(r,b);return r;}\n");
                            e("char *__pcopy(char*s,int i,int n){char*r=(char*)malloc(n+1);int k=0;int L=strlen(s);while(k<n&&(i-1+k)<L){r[k]=s[i-1+k];k++;}r[k]=0;return r;}\n");
                            e("int __ppos(char*sub,char*s){int i=0;int sl=strlen(s);int bl=strlen(sub);while(i+bl<=sl){int j=0;while(j<bl&&s[i+j]==sub[j])j++;if(j==bl)return i+1;i++;}return 0;}\n");
-                           e("int __pround(double v){return (int)(v<0?v-0.5:v+0.5);}\n"); } ;
+                           e("int __pround(double v){return (int)(v<0?v-0.5:v+0.5);}\n");
+                           e("char *__pchs(char c){char*r=(char*)malloc(2);r[0]=c;r[1]=0;return r;}\n"); } ;
 mainhdr   : /* empty */  { e("\nint main(void){\n"); } ;
 
 decl_list : /* empty */ | decl_list decl ;
@@ -549,31 +596,34 @@ rec_open   : /* empty */  { rec_push(); } ;
 field_list : field_decl | field_list ';' field_decl | field_list ';' ;
 field_decl : id_list ':' typ  { add_fields((char *)$1, $3); } ;
 
-proc_decl  : proc_sig local_decls compound ';'  { e("}\n"); nsym = saved_nsym; curfunc = 0; }
-           | proc_sig KFORWARD ';'              { e("}\n"); nsym = saved_nsym; curfunc = 0; }
+proc_decl  : proc_sig hdr local_decls compound ';'  { e("}\n"); nsym = saved_nsym; curfunc = 0; }
+           | proc_sig KFORWARD ';'              { e(pend_hdr); e(";\n"); nsym = saved_nsym; curfunc = 0; }
            | meth_body ;
+/* the buffered header is emitted here, i.e. only once we know a body follows */
+hdr        : /* empty */  { e(pend_hdr); e("{\n"); e(pend_pre); } ;
 meth_body  : meth_psig local_decls compound ';'  { if (curfunc) e("return __result;\n}\n"); else e("}\n"); nsym = saved_nsym; curfunc = 0; curclass = -1; } ;
 meth_psig  : KPROCEDURE IDENT '.' IDENT pscope params ';'          { begin_method((char *)$2, (char *)$4, T_VOID, (char *)$6); }
            | KFUNCTION IDENT '.' IDENT pscope params ':' typ ';'   { begin_method((char *)$2, (char *)$4, $8, (char *)$6); }
            | KCONSTRUCTOR IDENT '.' IDENT pscope params ';'        { begin_method((char *)$2, (char *)$4, T_VOID, (char *)$6); }
            | KDESTRUCTOR IDENT '.' IDENT pscope params ';'         { begin_method((char *)$2, (char *)$4, T_VOID, (char *)$6); } ;
 proc_sig   : KPROCEDURE IDENT pscope params ';'
-             { reg_func((char *)$2, T_VOID); e(F2("void %s(%s){\n", cname((char *)$2), (char *)$4)); curfunc = 0; } ;
+             { reg_func((char *)$2, T_VOID); pend_hdr = F2("\nvoid %s(%s)", cname((char *)$2), (char *)$4); pend_pre = g_pro; curfunc = 0; } ;
 
-func_decl  : func_sig local_decls compound ';'  { e("return __result;\n}\n"); nsym = saved_nsym; curfunc = 0; } ;
+func_decl  : func_sig hdr local_decls compound ';'  { e("return __result;\n}\n"); nsym = saved_nsym; curfunc = 0; }
+           | func_sig KFORWARD ';'                  { e(pend_hdr); e(";\n"); nsym = saved_nsym; curfunc = 0; } ;
 func_sig   : KFUNCTION IDENT pscope params ':' typ ';'
              { reg_func((char *)$2, $6);
-               e(j4(cscalar($6), " ", cname((char *)$2), F1("(%s){\n", (char *)$4)));
-               e(j3(cscalar($6), " __result;\n", "")); curfunc = (char *)$2; cur_ret = $6; } ;
+               pend_hdr = j4("\n", cscalar($6), j3(" ", cname((char *)$2), ""), F1("(%s)", (char *)$4));
+               pend_pre = j2(result_decl($6), g_pro); curfunc = (char *)$2; cur_ret = $6; } ;
 
-pscope     : /* empty */  { saved_nsym = nsym; g_np = 0; } ;
+pscope     : /* empty */  { saved_nsym = nsym; g_np = 0; g_pro = ""; } ;
 
 local_decls: /* empty */ | local_decls local_one ;
 local_one  : const_sect | var_sect | type_sect | label_sect ;
 
-params     : /* empty */          { $$ = (int)""; g_psig = ""; g_np = 0; }
+params     : /* empty */          { $$ = (int)""; g_psig = ""; g_np = 0; g_pro = ""; }
            | lparen pgroups ')'   { $$ = $2; } ;
-lparen     : '('                  { g_psig = ""; g_np = 0; } ;
+lparen     : '('                  { g_psig = ""; g_np = 0; g_pro = ""; } ;
 pgroups    : pgroup               { $$ = $1; }
            | pgroups ';' pgroup   { $$ = (int)j3((char *)$1, ", ", (char *)$3); } ;
 pgroup     : id_list ':' typ        { $$ = (int)param_text((char *)$1, $3, 0); }
@@ -591,8 +641,7 @@ real_stmt  : assign | proc_call | if_stmt | while_stmt | for_stmt | repeat_stmt 
            | labelpfx real_stmt ;
 labelpfx   : INTLIT ':'  { e(F1("L%s:\n", istr($1))); } ;
 
-assign     : lvalue ASSIGN expr             { do_assign($1, $3); }
-           | lvalue ASSIGN '[' setlist ']'  { e(F2("%s = %s;\n", etext($1), build_setval($4))); } ;
+assign     : lvalue ASSIGN expr             { do_assign($1, $3); } ;
 
 lvalue     : IDENT                  { $$ = emit_ident((char *)$1); }
            | lvalue '[' idxlist ']' { $$ = fold_index($1, $3); }
@@ -647,10 +696,10 @@ expr : expr '=' expr   { $$ = rel($1, "==", "==", $3); }
      | expr '>' expr   { $$ = rel($1, ">", ">", $3); }
      | expr LE expr    { $$ = rel($1, "<=", "<=", $3); }
      | expr GE expr    { $$ = rel($1, ">=", ">=", $3); }
-     | expr '+' expr   { if (is_str(etype($1))) $$ = mkE(F2("__pscat(%s, %s)", etext($1), etext($3)), T_STR); else if (etype($1) == T_SET) $$ = mkE(F2("ps_or(%s, %s)", etext($1), etext($3)), T_SET); else $$ = arith($1, "+", $3); }
-     | expr '-' expr   { if (etype($1) == T_SET) $$ = mkE(F2("ps_sub(%s, %s)", etext($1), etext($3)), T_SET); else $$ = arith($1, "-", $3); }
+     | expr '+' expr   { if (is_str(etype($1)) || is_str(etype($3))) $$ = mkE(F2("__pscat(%s, %s)", sarg($1), sarg($3)), T_STR); else if (is_set(etype($1)) || is_set(etype($3))) $$ = mkE(F2("ps_or(%s, %s)", etext(setv($1)), etext(setv($3))), T_SET); else $$ = arith($1, "+", $3); }
+     | expr '-' expr   { if (is_set(etype($1)) || is_set(etype($3))) $$ = mkE(F2("ps_sub(%s, %s)", etext(setv($1)), etext(setv($3))), T_SET); else $$ = arith($1, "-", $3); }
      | expr KOR expr   { $$ = logic($1, "||", "|", $3); }
-     | expr '*' expr   { if (etype($1) == T_SET) $$ = mkE(F2("ps_and(%s, %s)", etext($1), etext($3)), T_SET); else $$ = arith($1, "*", $3); }
+     | expr '*' expr   { if (is_set(etype($1)) || is_set(etype($3))) $$ = mkE(F2("ps_and(%s, %s)", etext(setv($1)), etext(setv($3))), T_SET); else $$ = arith($1, "*", $3); }
      | expr '/' expr   { $$ = mkE(F2("((double)(%s)/(double)(%s))", etext($1), etext($3)), T_REAL); }
      | expr KDIV expr  { $$ = bin($1, "/", $3, T_INT); }
      | expr KMOD expr  { $$ = bin($1, "%", $3, T_INT); }
@@ -658,7 +707,7 @@ expr : expr '=' expr   { $$ = rel($1, "==", "==", $3); }
      | KNOT expr       { int t = eff(etype($2)); $$ = mkE(F1(t == T_BOOL ? "(!%s)" : "(~%s)", etext($2)), etype($2)); }
      | '-' expr %prec UMINUS  { $$ = mkE(F1("(-%s)", etext($2)), etype($2)); }
      | '+' expr %prec UMINUS  { $$ = $2; }
-     | '(' expr ')'    { $$ = mkE(F1("(%s)", etext($2)), etype($2)); }
+     | '(' expr ')'    { $$ = (etype($2) == T_SETL) ? $2 : mkE(F1("(%s)", etext($2)), etype($2)); }
      | '@' lvalue %prec UMINUS  { $$ = mkE(F1("(&%s)", etext($2)), mkty(TK_PTR, etype($2), 0, 0)); }
      | INTLIT          { $$ = mkE(istr($1), T_INT); }
      | REALLIT         { $$ = mkE((char *)$1, T_REAL); }
@@ -667,8 +716,10 @@ expr : expr '=' expr   { $$ = rel($1, "==", "==", $3); }
      | KTRUE           { $$ = mkE("1", T_BOOL); }
      | KFALSE          { $$ = mkE("0", T_BOOL); }
      | KNIL            { $$ = mkE("0", T_INT); }
-     | expr KIN '[' setlist ']' { $$ = build_in($1, $4); }
-     | expr KIN expr            { $$ = mkE(F2("(ps_in(%s, %s) != 0)", etext($3), etext($1)), T_BOOL); }
+     /* a literal set on the right of `in` expands inline; otherwise ask the set */
+     | expr KIN expr            { if (etype($3) == T_SETL) $$ = build_in($1, (int)etext($3)); else $$ = mkE(F2("(ps_in(%s, %s) != 0)", etext(setv($3)), etext($1)), T_BOOL); }
+     | '[' setlist ']' { $$ = mkE((char *)$2, T_SETL); }
+     | '[' ']'         { $$ = mkE("ps_lit(0)", T_SET); }
      | lvalue          { $$ = $1; }
      | IDENT '(' arg_list ')'   { $$ = emit_fcall((char *)$1, $3); }
      | lvalue '.' IDENT '(' arg_list ')'  { $$ = method_call($1, (char *)$3, $5); }
@@ -716,8 +767,9 @@ void begin_method(char *clsn, char *methn, int ret, char *params)
     e(j4(cscalar(ret), " ", mname(cls, methn), "("));
     if (params[0]) e(j3(self, ", ", params)); else e(self);
     e("){\n");
-    if (ret != T_VOID) { e(j3(cscalar(ret), " __result;\n", "")); curfunc = methn; cur_ret = ret; }
+    if (ret != T_VOID) { e(result_decl(ret)); curfunc = methn; cur_ret = ret; }
     else curfunc = 0;
+    e(g_pro);   /* copy-in prologue for by-value array/string parameters */
     int mi = meth_find(cls, methn);   /* a constructor installs the vtable pointer */
     if (mi >= 0 && m_ctor[mi] && cls_nvirt[cls] > 0) e(j3("self->__vmt = VMT_", cls_name[cls], ";\n"));
 }
@@ -894,9 +946,9 @@ int main(int argc, char **argv)
         src = j3(substr(src, 0, ph + 1), udecls, src + ph + 1);
     }
     pasfile = in;
-    curclass = -1; g_psig = "";
-    nty = 0; int rsv; for (rsv = 0; rsv <= T_SET; rsv++) mkty(0, 0, 0, 0);   /* reserve base-type indices 0..7 */
-    ty_kind[T_INT] = T_INT; ty_kind[T_REAL] = T_REAL; ty_kind[T_CHR] = T_CHR; ty_kind[T_BOOL] = T_BOOL; ty_kind[T_STR] = T_STR; ty_kind[T_FILE] = T_FILE; ty_kind[T_SET] = T_SET;
+    curclass = -1; g_psig = ""; g_pro = ""; pend_hdr = ""; pend_pre = "";
+    nty = 0; int rsv; for (rsv = 0; rsv <= T_SETL; rsv++) mkty(0, 0, 0, 0);   /* reserve base-type indices 0..8 */
+    ty_kind[T_INT] = T_INT; ty_kind[T_REAL] = T_REAL; ty_kind[T_CHR] = T_CHR; ty_kind[T_BOOL] = T_BOOL; ty_kind[T_STR] = T_STR; ty_kind[T_FILE] = T_FILE; ty_kind[T_SET] = T_SET; ty_kind[T_SETL] = T_SETL;
 
     out = fopen((int)cpath, (int)"w");
     if (out == 0) { printf((int)"pascal: cannot write %s\n", (int)cpath); return 1; }

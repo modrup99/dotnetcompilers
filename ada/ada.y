@@ -89,7 +89,10 @@ dname   : NAME | dname '.' NAME ;
 subprograms : subprogram | subprograms subprogram ;
 
 subprogram : phproc formals KIS declpart KBEGIN stmts KEND endopt ';'   { sub_end(); }
-           | phfunc formals KRETURN NAME KIS { g_curret = typeref((char *)$4); } declpart KBEGIN stmts KEND endopt ';' { sub_end(); } ;
+           | phfunc formals KRETURN NAME frettype KIS declpart KBEGIN stmts KEND endopt ';' { sub_end(); } ;
+/* the return type must be recorded BEFORE the body is parsed; a mid-rule action cannot be
+ * placed here, so an empty marker nonterminal reads it from $0 (the NAME to its left) */
+frettype : { g_curret = typeref((char *)$0); } ;
 phproc  : KPROCEDURE NAME   { sub_begin((char *)$2, 0); } ;
 phfunc  : KFUNCTION NAME    { sub_begin((char *)$2, 1); } ;
 endopt  : | NAME ;

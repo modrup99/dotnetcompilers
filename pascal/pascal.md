@@ -59,13 +59,16 @@ end.
 (a fixed 256-byte buffer), and `text` / `file` (a text file handle). **Enumerations**
 (`type Color = (Red, Green, Blue)`) are ordered constants starting at 0. **Subranges**
 (`1..5`) behave as integers. **Arrays** take arbitrary bounds and any number of dimensions
-(`array[1..3, 1..3] of integer`), indexed `a[i]` or `a[i, j]`. **Records** (`record …
-end`) nest, assign by value, and pass by value. **Pointers** are `^T`, allocated with
-`new` and released with `dispose`; `p^` dereferences, `@x` takes an address. **Sets**
-(`set of char`) are 0..255 bitsets referenced by a runtime handle.
+(`array[1..3, 1..3] of integer`), indexed `a[i]` or `a[i, j]`; the element type may be
+`string` (`array[1..4] of string`). **Records** (`record … end`) nest, assign by value, and
+pass by value. **Pointers** are `^T`, allocated with `new` and released with `dispose`;
+`p^` dereferences, `@x` takes an address. **Sets** (`set of char`) are 0..255 bitsets
+referenced by a runtime handle; a `[…]` literal is an ordinary expression, so
+`['a'..'z'] - vowels` and `[1, 2] + s` work as well as `c in ['a'..'z']`.
 
 Literals: `123`, `1.5`, `1.5e3`, `'a string'` (double `''` for an embedded quote), and
-`'x'` — note that a **one-character quoted literal is a `char`, not a `string`**.
+`'x'`. A one-character literal is a `char`, but it is also accepted wherever a `string` is
+expected — `s + '!'`, `s < 'Q'`, `s := 'A'`, and `concat(s, '!')` all do the string thing.
 
 ## Statements / Commands
 
@@ -77,8 +80,15 @@ declarations, `begin … end` compounds, and procedure calls.
 ## Functions
 
 Top-level `procedure` (no result) and `function` (result assigned to the function's own
-name, as in `Square := k * k`). Parameters are by value by default; a `var` parameter is
-by reference, so `Swap(x, y)` exchanges the caller's variables. Recursion works.
+name, as in `Square := k * k`). Parameters are by value by default — including arrays and
+strings, which are copied on entry, so writing to them does not touch the caller's
+variable. A `var` parameter is by reference, so `Swap(x, y)` exchanges the caller's
+variables; `var` works for arrays and strings too (`procedure Fill(var a: IntArr)`).
+Recursion works.
+
+`procedure P(...); forward;` (or `function F(...): T; forward;`) declares the signature
+only and emits a C prototype; the body is written later in the usual form. That is how
+mutual recursion between two subprograms is expressed.
 
 **Objects.** `type T = object … end` declares an object type with fields and
 `procedure`/`function`/`constructor`/`destructor` members; `object(Parent)` gives single
@@ -129,20 +139,13 @@ text.
 
 A broad Turbo-Pascal core, with these honest gaps and defects:
 
-- **`forward` produces an empty stub**, so mutual recursion between two procedures does
-  not work — the forward declaration's empty body is what runs.
 - **No nested procedures or functions.** A subprogram's local declarations are limited to
   `const`, `var`, `type`, and `label`.
-- **Arrays and strings are effectively always by reference.** A `var` parameter of array
-  type fails to compile; a plain array or `string` parameter compiles but aliases the
-  caller's storage, so writes inside the subprogram are visible outside.
-- **`array[…] of string` does not work** — the elements are uninitialised pointers.
-- **Set literals are positional.** `[…]` may appear only as the entire right-hand side of
-  an assignment or after `in`; `['a'..'z'] - vowels` is a syntax error. Combine set
-  *variables* with `+`, `-`, `*`. Sets are handles into a runtime table, so `b := a`
-  aliases rather than copies.
-- **A one-character quoted literal is a `char`.** `s + '!'` and `s < 'Q'` therefore
-  misbehave; use a two-or-more-character literal, or build the value with `concat`/`chr`.
+- **Sets support `+`, `-`, `*`, and `in` only** — no `=`, `<=`, or `>=` between sets (those
+  compare runtime handles, not membership). Sets are handles into a runtime table, so
+  `b := a` aliases rather than copies.
+- **A `string` is a fixed 256-byte buffer with no bounds check**, so a `var string`
+  parameter or a long concatenation can overrun it.
 - Field widths are honoured for integers and reals but **ignored for strings and chars**.
 - Text files only — no typed or binary files, no `get`/`put`, no `seek`.
 - Not implemented: variant records, `packed`, procedural parameters, `absolute`, sized
@@ -275,9 +278,10 @@ type
   TGrid  = array[1..3, 1..3] of integer;
 var
   a: array[1..5] of integer;
+  names: array[1..2] of string;
   m: TGrid;
   p, q: TPoint;
-  vowels, letters, cons: set of char;
+  vowels, cons: set of char;
   i, j: integer;
 begin
   for i := 1 to 5 do a[i] := i * i;
@@ -299,9 +303,12 @@ begin
   writeln('p = (', p.x, ',', p.y, ')   q = (', q.x, ',', q.y, ')');
   with p do writeln('with p: x=', x, ' y=', y);
 
-  vowels  := ['a', 'e', 'i', 'o', 'u'];
-  letters := ['a'..'z'];
-  cons    := letters - vowels;
+  names[1] := 'ada';
+  names[2] := 'niklaus';
+  writeln('names: ', names[1], ' & ', names[2]);
+
+  vowels := ['a', 'e', 'i', 'o', 'u'];
+  cons   := ['a'..'z'] - vowels;      { a [...] literal is an ordinary operand }
   if 'b' in cons   then writeln('b is a consonant');
   if 3 in [1, 2, 4..6] then writeln('3 in set') else writeln('3 not in set')
 end.
@@ -314,15 +321,16 @@ squares: 1 4 9 16 25
    3   6   9
 p = (3,4)   q = (9,4)
 with p: x=3 y=4
+names: ada & niklaus
 b is a consonant
 3 not in set
 ```
 
-Array bounds are whatever you declare — `array[1..5]` really starts at 1. `q := p` copies
-the whole record, which is why changing `q.x` leaves `p` alone. `with p do` brings `p`'s
-field names into scope. Set difference (`letters - vowels`) needs set *variables*; a
-literal `[…]` may only be the whole right-hand side of an assignment or the operand of
-`in`.
+Array bounds are whatever you declare — `array[1..5]` really starts at 1, and the element
+type may be `string`. `q := p` copies the whole record, which is why changing `q.x` leaves
+`p` alone. `with p do` brings `p`'s field names into scope. A `[…]` set literal is an
+ordinary expression, so `['a'..'z'] - vowels` needs no intermediate variable; `x in […]`
+still compiles to an inline comparison chain rather than building a set.
 
 ### 5. Subroutines and functions
 
@@ -373,8 +381,34 @@ after Swap: a=2 b=1
 
 A `function` returns a value by assigning to its own name (`Square := k * k`); a
 `procedure` returns nothing. `var` parameters are by reference, so `Swap` really exchanges
-`a` and `b`. Recursion (`Fact`) works because each top-level subprogram becomes an
-ordinary static method.
+`a` and `b`; without `var`, even an array or `string` argument is copied on entry.
+Recursion (`Fact`) works because each top-level subprogram becomes an ordinary static
+method, and `forward` lets two subprograms call each other:
+
+```pascal
+program Parity;
+var n: integer;
+procedure IsOdd(n: integer); forward;
+procedure IsEven(n: integer);
+begin
+  if n = 0 then writeln('even') else IsOdd(n - 1)
+end;
+procedure IsOdd(n: integer);
+begin
+  if n = 0 then writeln('odd') else IsEven(n - 1)
+end;
+begin
+  for n := 0 to 4 do begin write(n, ': '); IsEven(n) end
+end.
+```
+
+```
+0: even
+1: odd
+2: even
+3: odd
+4: even
+```
 
 ### 6. Memory management
 
@@ -449,7 +483,9 @@ begin
   for i := length(s) downto 1 do write(s[i]);
   writeln;
   if s = 'Pascal' then writeln('compares equal');
-  writeln('upcase(s[2]) = ', upcase(s[2]))
+  writeln('upcase(s[2]) = ', upcase(s[2]));
+  writeln('s + ''!''      = ', s + '!');
+  if s < 'Q' then writeln('s sorts before ''Q''')
 end.
 ```
 
@@ -462,11 +498,14 @@ s[1] = P  s[6] = l
 lacsaP
 compares equal
 upcase(s[2]) = A
+s + '!'      = Pascal!
+s sorts before 'Q'
 ```
 
 `copy(s, start, count)` extracts a substring (1-based), `pos(sub, s)` finds one (0 if
-absent), `s[i]` yields a `char`. Note `''` inside a literal is one apostrophe. Remember
-that `'!'` is a *char*, not a string — concatenating it will not do what you want.
+absent), `s[i]` yields a `char`. Note `''` inside a literal is one apostrophe. A
+one-character literal such as `'!'` is a `char`, but in a string context it is widened to a
+one-character string, so `s + '!'` and `s < 'Q'` behave as Turbo Pascal does.
 
 ### 8. Drawing a picture — a text diamond
 
@@ -624,5 +663,5 @@ signatures, and splices the implementation in ahead of the program body — whol
 inlining rather than separate compilation. `assign`/`rewrite`/`close` write the file,
 `assign`/`reset`/`readln`/`eof`/`close` read it back a line at a time.
 
-From here the natural extensions are nested procedures, working `forward` declarations,
-and real separate compilation of units (see *Subset boundaries*).
+From here the natural extensions are nested procedures and real separate compilation of
+units (see *Subset boundaries*).

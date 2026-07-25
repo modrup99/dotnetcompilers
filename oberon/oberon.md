@@ -30,11 +30,12 @@ CONST
   Name = "Oberon";                 (* a string constant *)
 TYPE
   Point    = RECORD x, y: INTEGER END;
-  Vec      = ARRAY 5 OF INTEGER;   (* 0-based *)
+  Vec      = ARRAY Max OF INTEGER; (* 0-based; length = any constant expression *)
+  Line     = ARRAY 80 OF CHAR;     (* ARRAY OF CHAR = a string variable *)
   Node     = POINTER TO NodeDesc;
   NodeDesc = RECORD (Point) next: Node END;   (* RECORD (Base) = extension *)
 VAR
-  n: INTEGER;  x: REAL;  c: CHAR;  ok: BOOLEAN;  s: SET;
+  n: INTEGER;  x: REAL;  c: CHAR;  ok: BOOLEAN;  s: SET;  txt: Line;
 
 PROCEDURE Square(k: INTEGER): INTEGER;        (* result via RETURN *)
 BEGIN RETURN k * k END Square;
@@ -45,8 +46,8 @@ PROCEDURE (p: Node) Show;                     (* type-bound procedure *)
 BEGIN Out.Int(p.x, 0) END Show;
 
 BEGIN
-  n := 42;  c := CHR(65);  s := {1, 3, 5..9};
-  Out.String("n = "); Out.Int(n, 4); Out.Ln;
+  n := 42;  c := 'A';  s := {1, 3, 5..9};  txt := "hello";
+  Out.String("n = "); Out.Int(n, 4); Out.String(txt); Out.Ln;
   IF n > 0 THEN ... ELSIF n = 0 THEN ... ELSE ... END;
   CASE n OF 1: ... | 2, 3: ... | 4..6: ... ELSE ... END;
   FOR n := 1 TO 10 BY 2 DO ... END;
@@ -61,13 +62,23 @@ END Demo.
 `INTEGER` / `LONGINT` / `SHORTINT` / `CARDINAL` (all 32-bit), `REAL` / `LONGREAL` (both
 64-bit double), `CHAR`, `BOOLEAN` (`TRUE`/`FALSE`), and `SET` (a 0..255 bitset held by a
 runtime handle). **Arrays** are `ARRAY n OF T`, **0-based**, and nest for more dimensions
-(`ARRAY 3 OF ARRAY 3 OF INTEGER`), indexed `a[i]` or `a[i, j]`. **Records** (`RECORD …
-END`) nest and assign by value; `RECORD (Base)` *extends* a record, inheriting its fields.
-**Pointers** are `POINTER TO T`, allocated with `NEW`; `p^` dereferences and `p.f`
-auto-dereferences.
+(`ARRAY 3 OF ARRAY 3 OF INTEGER`), indexed `a[i]` or `a[i, j]`. The length `n` may be any
+**constant expression** — a literal, a `CONST`, or arithmetic over them (`ARRAY Max * 2 OF
+INTEGER`); a length that is not constant at that point is a compile error. **Records**
+(`RECORD … END`) nest and assign by value; `RECORD (Base)` *extends* a record, inheriting
+its fields. **Pointers** are `POINTER TO T`, allocated with `NEW`; `p^` dereferences and
+`p.f` auto-dereferences.
 
-Literals: `123`, `1.5`, `1.5E3`, and `"text"` or `'text'` (both give a string). There is no
-character literal — build a `CHAR` with `CHR(n)` or by indexing an `ARRAY OF CHAR`.
+An **`ARRAY n OF CHAR` is a string variable**: it can be assigned from a string literal or
+another string (`s := "hello"`), compared with `=`, `#`, `<`, `>`, `<=`, `>=`, concatenated
+with `+`, printed with `Out.String`, and still indexed one `CHAR` at a time (`s[0] := 'H'`).
+It is NUL-terminated, so `LEN(s)` is the declared capacity and `Strings.Length(s)` is the
+current text length.
+
+Literals: `123`, `1.5`, `1.5E3`, `'x'` (a `CHAR`), and `"text"` or `'text'` (a string). A
+one-character double-quoted literal is read as a `CHAR` wherever a `CHAR` is expected, so
+`c := "A"` and `c := 'A'` are the same; `'"'` is how you write a quote character, since
+there are no escape sequences. `CHR(n)` still builds a `CHAR` from a code.
 
 ## Statements / Commands
 
@@ -94,8 +105,11 @@ and calls dispatch dynamically — including from a base-typed variable and from
 non-overridden base procedure.
 
 **Built-in functions.** `ORD`, `CHR`, `ABS`, `ODD`, `CAP`, `LEN`, `SHORT`, `LONG`,
-`ENTIER`, `TRUNC`, `FLOAT`.
-**Built-in procedures.** `INC`, `DEC`, `NEW`, `HALT`, `INCL`, `EXCL`.
+`ENTIER`, `TRUNC`, `FLOAT`. `LEN(a)` is the declared element count of an array (so
+`LEN(ARRAY 32 OF CHAR)` is 32); applied to a string literal or constant, which has no
+declared bound, it is the text length.
+**Built-in procedures.** `INC`, `DEC`, `NEW`, `HALT`, `INCL`, `EXCL`, `COPY(src, dst)`
+(copy a string into an `ARRAY OF CHAR`).
 
 ## Input / Output
 
@@ -113,7 +127,17 @@ the same emitter:
 
 `Out.Int(n, 0)` means "no padding". A `BOOLEAN` passed to `Out.Int` prints `TRUE`/`FALSE`.
 Reals print in `%g` style. Modula-2's unqualified forms may also be written as
-`Terminal.WriteString(...)` etc.
+`Terminal.WriteString(...)` etc. `Out.String` accepts a literal, a string `CONST` or an
+`ARRAY OF CHAR` variable; `Out.Char` accepts a `CHAR` or a one-character literal.
+
+Three `Strings` operations are implemented, and only under that qualified spelling (so a
+user `PROCEDURE Length` is not shadowed):
+
+| Call | Effect |
+|---|---|
+| `Strings.Length(s)` | current text length of `s`, up to its terminating `CHR(0)` |
+| `Strings.Append(extra, s)` | append `extra` to `s` |
+| `Strings.Copy(src, s)` | copy `src` into `s` (same as `COPY(src, s)`) |
 
 There is **no input** and **no file I/O**.
 
@@ -129,7 +153,11 @@ None. Activity 8 draws a chart with text.
 - `DIV` is integer division and `MOD` the remainder (truncated: `-7 MOD 3` is `-1`);
   `/` always yields a `REAL`.
 - Comments are `(* … *)` and nest properly. String literals have **no escape sequences** —
-  a `\"` inside `"…"` will not parse.
+  a `\"` inside `"…"` will not parse, and a `"` cannot appear inside `"…"` at all (write the
+  character as `'"'`).
+- `'x'` is a `CHAR` literal and `'xy'` a string; `"x"` is a string that is read as a `CHAR`
+  where a `CHAR` is wanted. `CHAR` literals work as `CASE` labels, including ranges
+  (`'a'..'z'`). Oberon's hexadecimal form `41X` is **not** implemented — use `CHR(65)`.
 - Every block closes with `END`, and a `MODULE`/`PROCEDURE` repeats its own name after
   `END`.
 - `IMPORT` and `FROM … IMPORT …` clauses are parsed and discarded; an export mark (`*`
@@ -142,19 +170,22 @@ A working Wirth-family core — modules, structured types, the full statement se
 Oberon-2's record extension with virtual type-bound procedures — with these honest gaps
 and defects:
 
-- **No string variables.** Only string *literals* and string *constants* (`CONST Name =
-  "Oberon"`) are text; `+`, `=`, `<`, `LEN` and `Out.String` work on those. An
-  `ARRAY n OF CHAR` is a genuine character array: `s := "hello"` compiles but produces
-  garbage, and `Out.String(s)` prints a number. Fill and read such an array one `CHAR` at
-  a time.
+- **Strings are C strings.** An `ARRAY n OF CHAR` holds text (assignment, comparison,
+  concatenation, `Out.String`, `COPY`, `Strings.Length`/`Append`/`Copy`), but it is
+  **NUL-terminated and unchecked**: nothing stops a literal or a concatenation from
+  overrunning the declared length, and a character array filled elementwise without a
+  terminating `CHR(0)` will read as garbage past its text. `s + t` builds a fresh heap
+  string, so it is never truncated, but assigning it back into a short array is.
 - **No nested procedures.** A `PROCEDURE` inside another `PROCEDURE` is accepted by the
   grammar but the emitted C does not compile.
-- **`ARRAY n OF T` needs a literal length.** A named constant length
-  (`ARRAY N OF INTEGER`) is silently approximated as **64** elements. `ARRAY OF T` (an open
-  array parameter) is parsed but has no length information.
-- **The library modules are names only.** `Out`, `InOut`, `Terminal`, `Texts`, `Files`,
-  `Strings` and `Math` are recognised, but only the `Write…` / `Out.…` procedures in the
-  I/O table above are implemented. `Math.sqrt(x)` and friends fail to link.
+- **`ARRAY OF T` (an open array parameter) has no length information**, so `LEN` on one is
+  wrong — pass the length as a second parameter, or rely on the `CHR(0)` terminator for
+  `ARRAY OF CHAR`. Declared array lengths must be constant expressions, and a
+  non-constant one is a compile error rather than a guess.
+- **The library modules are almost names only.** `Out`, `InOut`, `Terminal`, `Texts`,
+  `Files`, `Strings` and `Math` are recognised, but only the `Write…` / `Out.…` procedures
+  in the I/O table above and `Strings.Length`/`Append`/`Copy` are implemented.
+  `Math.sqrt(x)` and friends fail to link.
 - **Sets are handles** into a runtime table of 0..255 bitsets, so `b := a` aliases rather
   than copies, and `INCL`/`EXCL` mutate every name bound to that set.
 - **No input, no files**: `Read`, `ReadInt`, `ReadString`, `Texts.Scanner`, `Files` are not
@@ -224,7 +255,7 @@ VAR
   c: CHAR;
   ok: BOOLEAN;
 BEGIN
-  n := 42;  x := 2.5;  c := CHR(65);  ok := TRUE;
+  n := 42;  x := 2.5;  c := 'A';  ok := TRUE;
   Out.String("n    = "); Out.Int(n, 0); Out.Ln;
   Out.String("x    = "); Out.Real(x, 0); Out.Ln;
   Out.String("c    = "); Out.Char(c); Out.Ln;
@@ -236,7 +267,8 @@ BEGIN
   Out.String("7 / 2    = "); Out.Real(7 / 2, 0); Out.Ln;
   Out.String("ABS(-3)  = "); Out.Int(ABS(-3), 0); Out.Ln;
   Out.String("ODD(7)   = "); Out.Int(ORD(ODD(7)), 0); Out.Ln;
-  Out.String("CAP(z)   = "); Out.Char(CAP(CHR(122))); Out.Ln;
+  Out.String("CAP(z)   = "); Out.Char(CAP('z')); Out.Ln;
+  Out.String("ORD(A)   = "); Out.Int(ORD('A'), 0); Out.Ln;
   Out.String("ENTIER   = "); Out.Int(ENTIER(2.7), 0); Out.Ln;
   Out.String("FLOAT(3) = "); Out.Real(FLOAT(3), 0); Out.Ln
 END Vars.
@@ -255,14 +287,16 @@ Pi       = 3.14159
 ABS(-3)  = 3
 ODD(7)   = 1
 CAP(z)   = Z
+ORD(A)   = 65
 ENTIER   = 2
 FLOAT(3) = 3
 ```
 
-Every declaration section is optional and may repeat. Note `c := CHR(65)` — there is no
-character literal in this dialect, because `"A"` and `'A'` both scan as strings. `DIV`
-truncates; `/` always produces a `REAL`. `ORD` converts a `CHAR` or `BOOLEAN` to its
-integer value, `FLOAT` widens an integer, and `ENTIER`/`TRUNC` narrow a real.
+Every declaration section is optional and may repeat. `'A'` is a `CHAR` literal; `"A"`
+means the same thing here, because a one-character string is read as a `CHAR` where a
+`CHAR` is expected, while `'AB'` and `"AB"` are strings. `DIV` truncates; `/` always
+produces a `REAL`. `ORD` converts a `CHAR` or `BOOLEAN` to its integer value, `FLOAT`
+widens an integer, and `ENTIER`/`TRUNC` narrow a real.
 
 ### 3. Flow control
 
@@ -330,20 +364,21 @@ separated by `|`, and `ELSE` is the catch-all.
 ```modula2
 MODULE Structured;
 IMPORT Out;
+CONST N = 5;
 TYPE
   Point = RECORD x, y: INTEGER END;
   Box   = RECORD lo, hi: Point END;
 VAR
-  a: ARRAY 5 OF INTEGER;
+  a: ARRAY N OF INTEGER;
   m: ARRAY 3 OF ARRAY 3 OF INTEGER;
   p: Point;
   b: Box;
   s, t, u: SET;
   i, j: INTEGER;
 BEGIN
-  FOR i := 0 TO 4 DO a[i] := (i + 1) * (i + 1) END;
+  FOR i := 0 TO N - 1 DO a[i] := (i + 1) * (i + 1) END;
   Out.String("squares:");
-  FOR i := 0 TO 4 DO Out.Int(a[i], 4) END; Out.Ln;
+  FOR i := 0 TO LEN(a) - 1 DO Out.Int(a[i], 4) END; Out.Ln;
 
   FOR i := 0 TO 2 DO
     FOR j := 0 TO 2 DO m[i][j] := (i + 1) * (j + 1) END
@@ -382,8 +417,9 @@ intersection:  5  7
 ```
 
 Arrays are 0-based, unlike Pascal's declared bounds; `m[i][j]` and `m[i, j]` are the same
-thing. Records nest and assign whole (`b.lo := p`). Set constructors use braces and accept
-ranges (`{5..9}`); `+` is union, `*` intersection, `-` difference, and `IN` tests
+thing. The declared length is a constant expression — here the `CONST N` — and `LEN(a)`
+reads it back. Records nest and assign whole (`b.lo := p`). Set constructors use braces and
+accept ranges (`{5..9}`); `+` is union, `*` intersection, `-` difference, and `IN` tests
 membership.
 
 ### 5. Subroutines and functions
@@ -412,7 +448,7 @@ END Swap;
 PROCEDURE Rule(w: INTEGER);
 VAR i: INTEGER;
 BEGIN
-  FOR i := 1 TO w DO Out.Char(CHR(45)) END;
+  FOR i := 1 TO w DO Out.Char('-') END;
   Out.Ln
 END Rule;
 
@@ -481,53 +517,76 @@ an integer offset into that arena, which is what makes it expressible in verifia
 
 ### 7. Text
 
-Text handling is deliberately thin: string constants and literals are real text, while an
-`ARRAY OF CHAR` is a character array you drive one element at a time.
+A `CHAR` is one character (`'x'`) and an `ARRAY n OF CHAR` is a string variable: it takes a
+literal or another string whole, compares and concatenates, prints with `Out.String`, and is
+still indexable one character at a time.
 
 ```modula2
 MODULE Text;
-IMPORT Out;
+IMPORT Out, Strings;
 CONST Greeting = "Hello";
       Who      = "Oberon";
-VAR buf: ARRAY 8 OF CHAR;
+VAR s: ARRAY 32 OF CHAR;
+    c: CHAR;
     i: INTEGER;
 BEGIN
   Out.String(Greeting + ", " + Who); Out.Ln;
-  Out.String("LEN(Greeting) = "); Out.Int(LEN(Greeting), 0); Out.Ln;
-  IF Greeting = "Hello" THEN Out.String("compares equal"); Out.Ln END;
+  Out.String("LEN(Greeting)     = "); Out.Int(LEN(Greeting), 0); Out.Ln;
 
-  buf[0] := CHR(79); buf[1] := CHR(75); buf[2] := CHR(0);
-  Out.String("buf: ");
+  s := "Oberon";
+  Out.String("s                 = "); Out.String(s); Out.Ln;
+  Out.String("LEN(s)            = "); Out.Int(LEN(s), 0); Out.Ln;
+  Out.String("Strings.Length(s) = "); Out.Int(Strings.Length(s), 0); Out.Ln;
+  IF s = "Oberon" THEN Out.String("compares equal"); Out.Ln END;
+  IF s < "Pascal" THEN Out.String("sorts before Pascal"); Out.Ln END;
+
+  Strings.Append("-2", s);
+  Out.String("after Append      = "); Out.String(s); Out.Ln;
+  s[0] := 'o';
+  Out.String("after s[0] := o   = "); Out.String(s); Out.Ln;
+  c := s[1];
+  Out.String("s[1]              = "); Out.Char(c); Out.Ln;
+
+  COPY("counted", s);
   i := 0;
-  WHILE buf[i] # CHR(0) DO Out.Char(buf[i]); INC(i) END;
-  Out.Ln
+  WHILE s[i] # CHR(0) DO INC(i) END;
+  Out.String("scanned length    = "); Out.Int(i, 0); Out.Ln
 END Text.
 ```
 
 ```
 Hello, Oberon
-LEN(Greeting) = 5
+LEN(Greeting)     = 5
+s                 = Oberon
+LEN(s)            = 32
+Strings.Length(s) = 6
 compares equal
-buf: OK
+sorts before Pascal
+after Append      = Oberon-2
+after s[0] := o   = oberon-2
+s[1]              = b
+scanned length    = 7
 ```
 
-`+` concatenates string constants, `=`/`<`/`>` compare them, `LEN` measures one. The
-`buf` loop is the honest shape of `ARRAY OF CHAR`: assign characters with `CHR`, terminate
-with `CHR(0)`, and print with `Out.Char` — `Out.String(buf)` would print a number (see
-*Subset boundaries*).
+Note the two lengths: `LEN(s)` is the array's **declared capacity** (32), which is what
+Oberon's `LEN` means, while `Strings.Length(s)` counts the characters actually held (6).
+Strings are NUL-terminated and **unchecked** — assigning text longer than the declared
+length overruns it, and a character array you fill elementwise must get its own `CHR(0)`
+terminator, as the scan loop above assumes.
 
 ### 8. Drawing a picture — a text chart
 
 ```modula2
 MODULE Chart;
 IMPORT Out;
-VAR data: ARRAY 4 OF INTEGER;
+CONST Rows = 4;
+VAR data: ARRAY Rows OF INTEGER;
     i, j: INTEGER;
 BEGIN
   data[0] := 3; data[1] := 6; data[2] := 2; data[3] := 5;
-  FOR i := 0 TO 3 DO
+  FOR i := 0 TO Rows - 1 DO
     Out.Int(i, 2); Out.String(" | ");
-    FOR j := 1 TO data[i] DO Out.Char(CHR(35)) END;
+    FOR j := 1 TO data[i] DO Out.Char('#') END;
     Out.String(" "); Out.Int(data[i], 0); Out.Ln
   END
 END Chart.
@@ -540,8 +599,9 @@ END Chart.
  3 | ##### 5
 ```
 
-An outer loop per row, an inner loop emitting `CHR(35)` (`#`) that many times, and
-`Out.Int(i, 2)` to right-align the labels in a two-column field.
+An outer loop per row, an inner loop emitting the `CHAR` literal `'#'` that many times, and
+`Out.Int(i, 2)` to right-align the labels in a two-column field. `Rows` is a `CONST` used
+both as the array length and as the loop bound.
 
 ### 9. Record extension and type-bound procedures
 
@@ -595,5 +655,6 @@ it calls is resolved through the vtable that `NEW` installed, so the most-derive
 implementation runs. That is the whole of Oberon-2's polymorphism: extension plus
 type-bound procedures, no `class` keyword required.
 
-From here the natural extensions are real string variables and separate compilation of
-modules with `DEFINITION`/`IMPLEMENTATION` parts (see *Subset boundaries*).
+From here the natural extensions are bounds-checked strings, `WITH` and type guards, and
+separate compilation of modules with `DEFINITION`/`IMPLEMENTATION` parts (see
+*Subset boundaries*).

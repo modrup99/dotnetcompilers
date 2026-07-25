@@ -106,13 +106,16 @@ int read_symname(char *buf)
 
 void declare_tokens(int assoc)
 {
-    /* read symbol names to end of line; assoc<0 => %token (no precedence) */
+    /* Read symbol names until the next %directive (or %%), so a declaration may span
+     * several lines as it does in real yacc. (It used to stop at end of line, silently
+     * dropping continuation lines -- the dropped names then looked like undeclared
+     * nonterminals much later.)  assoc<0 => %token (no precedence). */
     if (assoc >= 0) preclevel++;
-    int eol = next_line(p);
-    while (p < eol)
+    while (p < srclen)
     {
         skipws();
-        if (p >= eol) break;
+        if (p >= srclen) break;
+        if (src[p] == '%') break;                  /* next declaration, or the %% separator */
         char nm[40];
         int r = read_symname(nm);
         if (r == -1) break;
@@ -121,7 +124,6 @@ void declare_tokens(int assoc)
         else { if (tokcode[id] == 0) tokcode[id] = nextcode++; }
         if (assoc >= 0) { symprec[id] = preclevel; symassoc[id] = assoc; }
     }
-    p = eol;
 }
 
 void read_declarations(void)
@@ -216,13 +218,20 @@ void read_rules(void)
             int prod = nprod++;
             plhs[prod] = lhs; plen[prod] = 0; pact[prod][0] = 0; pprec[prod] = 0;
             int lastterm = -1;
+            int actseen = 0;      /* an action has been read for this alternative */
 
             while (1)
             {
                 skipws();
                 int c = src[p];
                 if (c == '|' || c == ';' || at_sep() || p >= srclen) break;
-                if (c == '{') { read_action(pact[prod]); continue; }
+                if (c == '{')
+                {
+                    /* Only one action per alternative, at its end. A second action used to
+                     * silently overwrite the first; say so instead. */
+                    if (actseen) die("two actions in one alternative (only a single action, at the end, is supported)", prod);
+                    read_action(pact[prod]); actseen = 1; continue;
+                }
                 if (c == '%' && strncmp(src + p, "%prec", 5) == 0)
                 {
                     p = p + 5; char nm[40]; read_symname(nm); int s = findsym(nm);
@@ -232,6 +241,11 @@ void read_rules(void)
                 char nm[40];
                 int r = read_symname(nm);
                 if (r == -1) { p++; continue; }
+                /* A symbol after an action means a mid-rule action, which this generator
+                 * cannot place: it used to be silently discarded (or silently moved to the
+                 * end of the rule), producing code that looked right and behaved wrongly.
+                 * Refuse it, and point at the supported alternative. */
+                if (actseen) die("mid-rule action not supported: move it into an empty marker nonterminal that reads $0 (see docs/lex-yacc.md); production", prod);
                 int isterm = (r >= 0);                 /* char literal => terminal */
                 int s = findsym(nm);
                 if (s < 0) s = addsym(nm, isterm);
@@ -571,6 +585,19 @@ void emit_action_code(char *s)
     int i = 0;
     while (s[i])
     {
+        /* pass string/char literals through untouched: a `$` inside them is text, not a
+         * stack reference (printf("$0 = %d\n", $0) must keep its literal "$0"). */
+        if (s[i] == '"' || s[i] == '\'')
+        {
+            int q = s[i]; putchar(s[i++]);
+            while (s[i] && s[i] != q)
+            {
+                if (s[i] == '\\' && s[i + 1]) { putchar(s[i++]); putchar(s[i++]); continue; }
+                putchar(s[i++]);
+            }
+            if (s[i]) putchar(s[i++]);
+            continue;
+        }
         if (s[i] == '$')
         {
             if (s[i + 1] == '$') { outs("yyval"); i = i + 2; continue; }

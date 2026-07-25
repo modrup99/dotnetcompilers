@@ -64,6 +64,9 @@ ILForge is built with it, including `lex`, `yacc`, and the other compilers.
 - **Not implemented:** `float` as a distinct type (all floating point is `double`),
   bitfields, `goto` into blocks, variadic *user* functions (libc varargs work),
   `setjmp`/`longjmp`, and the wider C99/C11 additions.
+- **Function pointers** carry int-sized signatures: a function whose parameters or result
+  are `double` or `long` cannot be called *through a pointer* (the indirect-call dispatcher
+  passes everything as a 32-bit int). Direct calls to such functions are unaffected.
 
 ### Pascal — `pascal`
 Turbo-Pascal-flavoured Pascal. See [pascal.md](../pascal/pascal.md) for the verified

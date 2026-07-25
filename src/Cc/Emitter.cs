@@ -131,6 +131,10 @@ public sealed class Emitter
     // numeric stack class: 0 = int32 (int/char/uint/pointer), 1 = int64 (long), 2 = float64
     private static int NumClass(CType t) => t.IsFloating ? 2 : t.IsLong ? 1 : 0;
 
+    // C's usual promotions for a unary arithmetic result: double and long keep their width,
+    // everything narrower (char, short, enum, pointer-as-int) is an int.
+    private static CType Promote(CType t) => t.IsFloating ? CType.Double : t.IsLong ? t : CType.Int;
+
     // ---- sizes / layout ------------------------------------------------
     private int SizeOf(CType t) => t switch
     {
@@ -645,9 +649,27 @@ public sealed class Emitter
             }
 
             case Unary u:
-                EmitValue(u.Operand, ctx);
-                switch (u.Op) { case "-": il.Emit(OpCodes.Neg); break; case "+": break; case "~": il.Emit(OpCodes.Not); break; case "!": il.Emit(OpCodes.Ldc_I4_0); il.Emit(OpCodes.Ceq); break; }
+            {
+                // The result type must follow the operand for - and +: reporting Int for a
+                // negated double made varargs box it as an int, so printf("%f", -3.1)
+                // printed -3.000000 (a variable holding -3.1 was fine).
+                var ot = EmitExpr(u.Operand, ctx);
+                if (ot.IsVoid) throw new CCompileException("a void value cannot be used in an expression");
+                switch (u.Op)
+                {
+                    case "-": il.Emit(OpCodes.Neg); return Promote(ot);
+                    case "+": return Promote(ot);
+                    case "~": il.Emit(OpCodes.Not); return Promote(ot);
+                    case "!":
+                        // compare against a zero of the operand's own kind, else the IL is invalid
+                        if (ot.IsFloating) il.Emit(OpCodes.Ldc_R8, 0.0);
+                        else if (ot.IsLong) il.Emit(OpCodes.Ldc_I8, 0L);
+                        else il.Emit(OpCodes.Ldc_I4_0);
+                        il.Emit(OpCodes.Ceq);
+                        return CType.Int;
+                }
                 return CType.Int;
+            }
 
             case Cast c:
             {
@@ -877,12 +899,22 @@ public sealed class Emitter
         return mb;
     }
 
+    // A function is reachable through a function pointer only if its signature matches the
+    // dispatcher's, which passes every argument (and returns) as a 32-bit int -- pointers
+    // included, since a C pointer is an int here. A candidate taking or returning double or
+    // long would make the emitted `call` disagree with the pushed arguments, which is
+    // invalid IL and kills the whole program at JIT time (it is not a local error), so such
+    // functions are excluded: they simply are not callable indirectly.
+    private static bool IntLike(CType t) => !t.IsFloating && !t.IsLong;
+
     private void EmitDispatchers()
     {
         foreach (var ((n, retVoid), mb) in _dispatchers)
         {
             var il = mb.GetILGenerator();
-            foreach (var fs in _funcs.Values.Where(s => s.Params.Count == n && s.Return.IsVoid == retVoid))
+            foreach (var fs in _funcs.Values.Where(s => s.Params.Count == n && s.Return.IsVoid == retVoid
+                                                        && (s.Return.IsVoid || IntLike(s.Return))
+                                                        && s.Params.All(IntLike)))
             {
                 var next = il.DefineLabel();
                 il.Emit(OpCodes.Ldarg, n); il.Emit(OpCodes.Ldc_I4, fs.Id); il.Emit(OpCodes.Bne_Un, next);

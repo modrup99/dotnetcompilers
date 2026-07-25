@@ -1086,9 +1086,13 @@ public static class CRuntime
                 }
                 default: sb.Append('%').Append(conv); continue;
             }
+            // The 0 flag zero-pads. C ignores it for d/i/o/u/x/X when a precision is given,
+            // but NOT for the floating conversions -- %05.2f must produce "03.10".
+            bool zeroPad = zero && (conv is 'f' or 'F' or 'e' or 'E' or 'g' or 'G'
+                                    || (prec < 0 && conv is 'd' or 'i' or 'u' or 'x' or 'X'));
             if (width > body.Length)
                 body = left ? body.PadRight(width)
-                     : zero && prec < 0 && conv is 'd' or 'i' or 'u' or 'x' or 'X' ? PadZeroSigned(body, width)
+                     : zeroPad ? PadZeroSigned(body, width)
                      : body.PadLeft(width);
             sb.Append(body);
         }

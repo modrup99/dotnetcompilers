@@ -95,8 +95,11 @@ bstmt   : EOL | decl EOL | exec EOL ;
 
 decl    : IMPLICITNONE
         | typ DCOLON declist
-        | typ ',' KPARAMETER DCOLON { g_dparam = 1; } declist
+        | typ ',' KPARAMETER DCOLON parmark declist
         | typ declist ;
+/* the flag must be set before `declist` is reduced, so it lives in an empty marker
+ * nonterminal rather than a mid-rule action (which this yacc cannot place) */
+parmark : { g_dparam = 1; } ;
 typ     : KINTEGER             { declstart(); g_dty = T_INT; $$ = T_INT; }
         | KREAL                { declstart(); g_dty = T_REAL; $$ = T_REAL; }
         | KLOGICAL             { declstart(); g_dty = T_LOG; $$ = T_LOG; }

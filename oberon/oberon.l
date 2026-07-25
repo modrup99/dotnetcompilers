@@ -57,6 +57,7 @@ int kw(char *s)   /* exact (case-sensitive) keyword match */
 [A-Za-z][A-Za-z0-9_]*   { tokln = pline; int k = kw(yytext); if (k) return k; yylval = (int)strdup((int)yytext); return IDENT; }
 [0-9]+\.[0-9]+([eE][+-]?[0-9]+)?   { tokln = pline; yylval = (int)strdup((int)yytext); return REALLIT; }
 [0-9]+          { tokln = pline; yylval = atoi((int)yytext); return INTLIT; }
+'[^']'          { tokln = pline; yylval = yytext[1]; return CHARLIT; }
 \"[^\"]*\"      { tokln = pline; char *t = yytext; t[strlen(t) - 1] = 0; yylval = (int)strdup((int)(t + 1)); return STRLIT; }
 '[^']*'         { tokln = pline; char *t = yytext; t[strlen(t) - 1] = 0; yylval = (int)strdup((int)(t + 1)); return STRLIT; }
 ":="            { return ASSIGN; }
